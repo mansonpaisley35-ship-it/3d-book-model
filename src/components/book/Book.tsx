@@ -8,6 +8,7 @@ import {
   makeStampMap,
   drawColophon,
   drawSpineText,
+  drawFrontCover,
 } from "./textures";
 
 /* ---------------------------------------------------------------------------
@@ -107,8 +108,11 @@ export function Book({ autoRotate = true }: { autoRotate?: boolean }) {
     const spineAuthor = makeStampMap(512, 128, (ctx, w, h) =>
       drawSpineText(ctx, w, h, { text: "Brian Potter" }),
     );
-    const front = makeStampMap(1024, 256, (ctx, w, h) =>
-      drawSpineText(ctx, w, h, { text: "The Origins of Efficiency" }),
+    const front = makeStampMap(1024, 512, (ctx, w, h) =>
+      drawFrontCover(ctx, w, h, {
+        lines: ["The Origins", "of Efficiency"],
+        author: "Brian Potter",
+      }),
     );
     return { clothNormal, clothRough, pageEdge, colophon, spine, spineAuthor, front };
   }, []);
@@ -195,12 +199,12 @@ export function Book({ autoRotate = true }: { autoRotate?: boolean }) {
       {/* printed head-edge hairline */}
       <mesh position={[0.055, page.ph / 2 + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[page.pw * 0.99, page.pt * 0.028]} />
-        <meshStandardMaterial color="#8f3a34" roughness={0.85} />
+        <meshStandardMaterial color="#8a3b35" roughness={0.85} />
       </mesh>
 
       {/* front cover: white-ink title + colophon */}
       <mesh position={[0.18, -H * 0.3, T / 2 + 0.004]}>
-        <planeGeometry args={[1.5, 0.375]} />
+        <planeGeometry args={[2.3, 1.15]} />
         <meshPhysicalMaterial {...stampProps} alphaMap={maps.front} />
       </mesh>
       <mesh position={[W / 2 - 0.34, H / 2 - 0.34, T / 2 + 0.004]}>

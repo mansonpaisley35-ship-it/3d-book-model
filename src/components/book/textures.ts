@@ -109,3 +109,32 @@ export function drawSpineText(ctx: CanvasRenderingContext2D, w: number, h: numbe
   ctx.fillText(opts.text ?? "", 0, 0);
   ctx.restore();
 }
+
+/**
+ * Front-cover stamping: title set over two lines with the author beneath,
+ * matching the quiet centred typography of the Press jackets.
+ */
+export function drawFrontCover(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  opts: { lines: string[]; author: string },
+) {
+  ctx.save();
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const titleSize = Math.round(h * 0.19);
+  const lead = titleSize * 1.22;
+  const block = opts.lines.length * lead;
+  let y = h * 0.42 - block / 2 + lead / 2;
+  ctx.font = `400 ${titleSize}px Georgia, 'Times New Roman', serif`;
+  for (const line of opts.lines) {
+    ctx.fillText(line, w / 2, y);
+    y += lead;
+  }
+  ctx.font = `400 ${Math.round(h * 0.085)}px Georgia, 'Times New Roman', serif`;
+  ctx.globalAlpha = 0.85;
+  ctx.fillText(opts.author.toUpperCase(), w / 2, h * 0.42 + block / 2 + h * 0.14);
+  ctx.restore();
+}
