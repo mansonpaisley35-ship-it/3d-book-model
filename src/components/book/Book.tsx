@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import {
@@ -6,9 +6,7 @@ import {
   makeClothRoughnessMap,
   makePageEdgeMap,
   makeStampMap,
-  drawColophon,
-  drawSpineText,
-  drawFrontCover,
+  drawPencil,
 } from "./textures";
 
 /* ---------------------------------------------------------------------------
@@ -23,14 +21,19 @@ const HINGE_X = -W / 2 + 0.19; // centre of the joint groove
 const HINGE_W = 0.075; // half-width of the groove
 const HINGE_D = 0.05; // groove depth
 const EDGE_ROUND = 0.035; // head/tail edge rounding of the case
-const SPINE_SURF = -W / 2 - 0.062; // just outside the spine crown, for stamped artwork
+const SPINE_SURF = -W / 2 - 0.062; // just outside the spine crown, for artwork
+
+export type BookImages = {
+  front?: string;
+  back?: string;
+  spine?: string;
+  edges?: string;
+};
 
 /**
  * The case (both boards + spine) is one continuous cross-section extruded
- * along the book's height. Modelling it as a profile means the joint groove
- * exists symmetrically on the front AND the back, and the spine, boards and
- * grooves share perfectly smooth normals — the two things the AI-generated
- * mesh got wrong.
+ * along the book's height, so the joint groove exists symmetrically on the
+ * front AND the back, with smooth shared normals.
  */
 function buildCaseGeometry() {
   const s = new THREE.Shape();
@@ -50,7 +53,7 @@ function buildCaseGeometry() {
     HINGE_X - HINGE_W, half - 0.012,
   );
 
-  // ---- joint groove (back) — the mirror the source mesh was missing -----
+  // ---- joint groove (back) ---------------------------------------------
   s.quadraticCurveTo(HINGE_X - HINGE_W * 0.45, half - HINGE_D * 0.9, HINGE_X, half - HINGE_D);
   s.quadraticCurveTo(HINGE_X + HINGE_W * 0.45, half, HINGE_X + HINGE_W, half);
   s.lineTo(W / 2 - R_CORNER, half);
@@ -91,30 +94,58 @@ function buildPageGeometry() {
   return { geo, pw, ph, pt };
 }
 
-export function Book({ autoRotate = true }: { autoRotate?: boolean }) {
+/** Load a user-supplied image (data URL or http URL) into a texture. */
+function useImageTexture(url?: string) {
+  const [tex, setTex] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    if (!url) {
+      setTex(null);
+      return;
+    }
+    let cancelled = false;
+    const loader = new THREE.TextureLoader();
+    loader.load(url, (t) => {
+      if (cancelled) {
+        t.dispose();
+        return;
+      }
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 8;
+      setTex(t);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  useEffect(() => () => tex?.dispose(), [tex]);
+  return tex;
+}
+
+export function Book({
+  autoRotate = true,
+  images = {},
+  onEdit,
+}: {
+  autoRotate?: boolean;
+  images?: BookImages;
+  onEdit?: () => void;
+}) {
   const group = useRef<THREE.Group>(null);
 
   const caseGeo = useMemo(buildCaseGeometry, []);
   const page = useMemo(buildPageGeometry, []);
 
+  const frontTex = useImageTexture(images.front);
+  const backTex = useImageTexture(images.back);
+  const spineTex = useImageTexture(images.spine);
+  const edgeTex = useImageTexture(images.edges);
+
   const maps = useMemo(() => {
     const clothNormal = makeClothNormalMap();
     const clothRough = makeClothRoughnessMap();
     const pageEdge = makePageEdgeMap();
-    const colophon = makeStampMap(256, 256, drawColophon);
-    const spine = makeStampMap(1024, 128, (ctx, w, h) =>
-      drawSpineText(ctx, w, h, { text: "The Origins of Efficiency" }),
-    );
-    const spineAuthor = makeStampMap(512, 128, (ctx, w, h) =>
-      drawSpineText(ctx, w, h, { text: "Brian Potter" }),
-    );
-    const front = makeStampMap(1024, 512, (ctx, w, h) =>
-      drawFrontCover(ctx, w, h, {
-        lines: ["The Origins", "of Efficiency"],
-        author: "Brian Potter",
-      }),
-    );
-    return { clothNormal, clothRough, pageEdge, colophon, spine, spineAuthor, front };
+    const pencil = makeStampMap(256, 256, drawPencil);
+    return { clothNormal, clothRough, pageEdge, pencil };
   }, []);
 
   const clothMaterial = useMemo(
@@ -135,38 +166,38 @@ export function Book({ autoRotate = true }: { autoRotate?: boolean }) {
     [maps],
   );
 
-  const pageEdgeMaterial = useMemo(() => {
-    const m = new THREE.MeshStandardMaterial({
-      color: new THREE.Color("#efe7d8"),
-      roughness: 0.92,
-      metalness: 0,
-      map: maps.pageEdge,
-    });
-    return m;
-  }, [maps]);
-
   const pageSideMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: "#e8e0d0", roughness: 0.95 }),
     [],
   );
 
-  // fore-edge / head / tail get the striated map; the inner faces stay plain
+  // fore-edge / head / tail get the striated (or user-supplied) map
   const pageMaterials = useMemo(() => {
-    const edgeTop = pageEdgeMaterial.clone();
-    edgeTop.map = maps.pageEdge.clone();
-    edgeTop.map.rotation = Math.PI / 2;
-    edgeTop.map.center.set(0.5, 0.5);
-    edgeTop.map.repeat.set(1, 1);
-    edgeTop.map.needsUpdate = true;
+    const base = edgeTex ?? maps.pageEdge;
+
+    const fore = new THREE.MeshStandardMaterial({
+      color: edgeTex ? "#ffffff" : "#efe7d8",
+      roughness: 0.92,
+      metalness: 0,
+      map: base,
+    });
+
+    const topMap = base.clone();
+    topMap.rotation = Math.PI / 2;
+    topMap.center.set(0.5, 0.5);
+    topMap.needsUpdate = true;
+    const edgeTop = fore.clone();
+    edgeTop.map = topMap;
+
     return [
-      pageEdgeMaterial, // +x fore edge
+      fore, // +x fore edge
       pageSideMaterial, // -x spine side
       edgeTop, // +y head
       edgeTop, // -y tail
       pageSideMaterial, // +z
       pageSideMaterial, // -z
     ];
-  }, [pageEdgeMaterial, pageSideMaterial, maps]);
+  }, [pageSideMaterial, maps, edgeTex]);
 
   useFrame((state, dt) => {
     if (!group.current) return;
@@ -175,13 +206,15 @@ export function Book({ autoRotate = true }: { autoRotate?: boolean }) {
     group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
   });
 
-  const stampProps = {
+  const pencilProps = {
     transparent: true,
     depthWrite: false,
     roughness: 0.5,
     metalness: 0,
     color: "#e6edf5",
   } as const;
+
+  const artProps = { roughness: 0.7, metalness: 0 } as const;
 
   return (
     <group ref={group}>
@@ -196,40 +229,65 @@ export function Book({ autoRotate = true }: { autoRotate?: boolean }) {
         receiveShadow
       />
 
-      {/* printed head-edge hairline */}
-      <mesh position={[0.055, page.ph / 2 + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[page.pw * 0.99, page.pt * 0.028]} />
-        <meshStandardMaterial color="#8a3b35" roughness={0.85} />
-      </mesh>
+      {/* head-edge hairline (hidden once a custom edge image is supplied) */}
+      {!edgeTex && (
+        <mesh position={[0.055, page.ph / 2 + 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[page.pw * 0.99, page.pt * 0.028]} />
+          <meshStandardMaterial color="#8a3b35" roughness={0.85} />
+        </mesh>
+      )}
 
-      {/* front cover: white-ink title + colophon */}
-      <mesh position={[0.18, -H * 0.3, T / 2 + 0.004]}>
-        <planeGeometry args={[2.3, 1.15]} />
-        <meshPhysicalMaterial {...stampProps} alphaMap={maps.front} />
-      </mesh>
-      <mesh position={[W / 2 - 0.34, H / 2 - 0.34, T / 2 + 0.004]}>
-        <planeGeometry args={[0.3, 0.3]} />
-        <meshPhysicalMaterial {...stampProps} alphaMap={maps.colophon} />
-      </mesh>
+      {/* front cover artwork */}
+      {frontTex && (
+        <mesh position={[0.02, 0, T / 2 + 0.004]}>
+          <planeGeometry args={[W - 0.12, H - 0.12]} />
+          <meshStandardMaterial map={frontTex} {...artProps} />
+        </mesh>
+      )}
 
-      {/* back cover: debossed colophon only */}
-      <mesh position={[0, 0, -T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
+      {/* back cover artwork */}
+      {backTex && (
+        <mesh position={[-0.02, 0, -T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[W - 0.12, H - 0.12]} />
+          <meshStandardMaterial map={backTex} {...artProps} />
+        </mesh>
+      )}
+
+      {/* spine artwork */}
+      {spineTex && (
+        <mesh position={[SPINE_SURF, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[T * 0.86, H - 0.16]} />
+          <meshStandardMaterial map={spineTex} {...artProps} />
+        </mesh>
+      )}
+
+      {/* pencil = edit button, front top-right corner */}
+      <mesh
+        position={[W / 2 - 0.34, H / 2 - 0.34, T / 2 + 0.012]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit?.();
+        }}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "auto")}
+      >
         <planeGeometry args={[0.34, 0.34]} />
-        <meshPhysicalMaterial {...stampProps} alphaMap={maps.colophon} opacity={0.75} />
+        <meshPhysicalMaterial {...pencilProps} alphaMap={maps.pencil} />
       </mesh>
 
-      {/* spine: title running head-to-tail, author + colophon */}
-      <mesh position={[SPINE_SURF, 0.35, 0]} rotation={[0, -Math.PI / 2, -Math.PI / 2]}>
-        <planeGeometry args={[2.6, 0.325]} />
-        <meshPhysicalMaterial {...stampProps} alphaMap={maps.spine} />
-      </mesh>
-      <mesh position={[SPINE_SURF, -1.4, 0]} rotation={[0, -Math.PI / 2, -Math.PI / 2]}>
-        <planeGeometry args={[0.95, 0.24]} />
-        <meshPhysicalMaterial {...stampProps} alphaMap={maps.spineAuthor} opacity={0.9} />
-      </mesh>
-      <mesh position={[SPINE_SURF, H / 2 - 0.35, 0]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[0.24, 0.24]} />
-        <meshPhysicalMaterial {...stampProps} alphaMap={maps.colophon} />
+      {/* pencil = edit button, back cover corner */}
+      <mesh
+        position={[-(W / 2 - 0.34), H / 2 - 0.34, -T / 2 - 0.012]}
+        rotation={[0, Math.PI, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit?.();
+        }}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "auto")}
+      >
+        <planeGeometry args={[0.34, 0.34]} />
+        <meshPhysicalMaterial {...pencilProps} alphaMap={maps.pencil} opacity={0.85} />
       </mesh>
     </group>
   );
