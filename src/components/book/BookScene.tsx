@@ -2,7 +2,8 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Book } from "./Book";
+import { Pencil, X } from "lucide-react";
+import { Book, type BookImages } from "./Book";
 
 const VIEWS = {
   cover: new THREE.Vector3(4.2, 1.9, 10.6),
@@ -12,6 +13,13 @@ const VIEWS = {
 } as const;
 
 export type ViewKey = keyof typeof VIEWS;
+
+const SLOTS: { key: keyof BookImages; label: string; hint: string }[] = [
+  { key: "front", label: "Front cover", hint: "Portrait artwork" },
+  { key: "back", label: "Back cover", hint: "Portrait artwork" },
+  { key: "spine", label: "Spine", hint: "Tall, narrow artwork" },
+  { key: "edges", label: "Page edges", hint: "Wraps fore-edge, head & tail" },
+];
 
 function CameraRig({ view, active }: { view: ViewKey; active: boolean }) {
   const { camera } = useThree();
@@ -32,10 +40,30 @@ function CameraRig({ view, active }: { view: ViewKey; active: boolean }) {
 export default function BookScene() {
   const [free, setFree] = useState(false);
   const [view, setView] = useState<ViewKey>("cover");
+  const [images, setImages] = useState<BookImages>({});
+  const [editing, setEditing] = useState(false);
 
   const pick = (v: ViewKey) => {
     setView(v);
     setFree(false);
+  };
+
+  const setImage = (key: keyof BookImages, file?: File | null) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setImages((prev) => {
+      if (prev[key]) URL.revokeObjectURL(prev[key]!);
+      return { ...prev, [key]: url };
+    });
+  };
+
+  const clearImage = (key: keyof BookImages) => {
+    setImages((prev) => {
+      if (prev[key]) URL.revokeObjectURL(prev[key]!);
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   return (
@@ -46,16 +74,13 @@ export default function BookScene() {
         camera={{ position: [4.2, 1.9, 10.6], fov: 30 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
         onPointerDown={() => setFree(true)}
-        onCreated={({ scene }) => {
-          (window as any).__scene = scene;
-        }}
       >
         <color attach="background" args={["#0e1319"]} />
         <fog attach="fog" args={["#0e1319", 16, 30]} />
 
         <Suspense fallback={null}>
           <group position={[0, 0.15, 0]} scale={0.76}>
-            <Book autoRotate={false} />
+            <Book autoRotate={false} images={images} onEdit={() => setEditing(true)} />
           </group>
 
           {/* soft studio setup: broad key from above-left, cool rim from behind */}
@@ -145,6 +170,70 @@ export default function BookScene() {
           </button>
         ))}
       </div>
+
+      <button
+        onClick={() => setEditing(true)}
+        className="pointer-events-auto absolute top-6 right-6 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
+      >
+        <Pencil size={13} /> Edit
+      </button>
+
+      {editing && (
+        <div className="pointer-events-auto absolute inset-y-0 right-0 z-20 w-full max-w-sm overflow-y-auto border-l border-white/10 bg-[#0e1319]/95 p-6 backdrop-blur-xl">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[10px] tracking-[0.3em] text-[#7f93aa] uppercase">Artwork</p>
+              <h2 className="mt-2 font-serif text-xl text-[#e8eef5]">Dress the book</h2>
+            </div>
+            <button
+              onClick={() => setEditing(false)}
+              aria-label="Close editor"
+              className="rounded-full border border-white/10 p-2 text-[#9db0c6] hover:text-[#e8eef5]"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="mt-6 space-y-4">
+            {SLOTS.map(({ key, label, hint }) => (
+              <div key={key} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-[#e8eef5]">{label}</p>
+                    <p className="mt-0.5 text-[11px] text-[#7f93aa]">{hint}</p>
+                  </div>
+                  {images[key] && (
+                    <img
+                      src={images[key]}
+                      alt={`${label} preview`}
+                      className="h-12 w-9 rounded object-cover"
+                    />
+                  )}
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
+                    {images[key] ? "Replace" : "Upload"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => setImage(key, e.target.files?.[0])}
+                    />
+                  </label>
+                  {images[key] && (
+                    <button
+                      onClick={() => clearImage(key)}
+                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

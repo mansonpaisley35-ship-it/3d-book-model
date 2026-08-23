@@ -68,8 +68,6 @@ export function makePageEdgeMap(size = 1024): THREE.Texture {
   return tex;
 }
 
-type StampOpts = { text?: string; mark?: boolean };
-
 /** White-ink / blind-deboss artwork used as an alpha + bump source. */
 export function makeStampMap(w: number, h: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
   const c = document.createElement("canvas");
@@ -84,57 +82,39 @@ export function makeStampMap(w: number, h: number, draw: (ctx: CanvasRenderingCo
   return tex;
 }
 
-/** The Press colophon: a small stacked-ellipse mark. */
-export function drawColophon(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = Math.max(2, w * 0.022);
-  const cx = w / 2;
-  const cy = h / 2;
-  const r = Math.min(w, h) * 0.3;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - r * 0.42, r * 0.62, r * 0.42, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(cx, cy + r * 0.42, r * 0.62, r * 0.42, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
-export function drawSpineText(ctx: CanvasRenderingContext2D, w: number, h: number, opts: StampOpts) {
+/** A simple pencil glyph — the on-cover "edit" affordance. */
+export function drawPencil(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const s = Math.min(w, h);
   ctx.save();
   ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 4);
   ctx.fillStyle = "#fff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `500 ${Math.round(h * 0.42)}px Georgia, 'Times New Roman', serif`;
-  ctx.fillText(opts.text ?? "", 0, 0);
-  ctx.restore();
-}
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = s * 0.055;
+  ctx.lineJoin = "round";
 
-/**
- * Front-cover stamping: title set over two lines with the author beneath,
- * matching the quiet centred typography of the Press jackets.
- */
-export function drawFrontCover(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  opts: { lines: string[]; author: string },
-) {
-  ctx.save();
-  ctx.fillStyle = "#fff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  const titleSize = Math.round(h * 0.19);
-  const lead = titleSize * 1.22;
-  const block = opts.lines.length * lead;
-  let y = h * 0.42 - block / 2 + lead / 2;
-  ctx.font = `400 ${titleSize}px Georgia, 'Times New Roman', serif`;
-  for (const line of opts.lines) {
-    ctx.fillText(line, w / 2, y);
-    y += lead;
-  }
-  ctx.font = `400 ${Math.round(h * 0.085)}px Georgia, 'Times New Roman', serif`;
-  ctx.globalAlpha = 0.85;
-  ctx.fillText(opts.author.toUpperCase(), w / 2, h * 0.42 + block / 2 + h * 0.14);
+  const bw = s * 0.2; // body width
+  const top = -s * 0.34;
+  const tipY = s * 0.34;
+  const shoulder = tipY - s * 0.16;
+
+  // body
+  ctx.beginPath();
+  ctx.rect(-bw / 2, top, bw, shoulder - top);
+  ctx.stroke();
+
+  // ferrule line
+  ctx.beginPath();
+  ctx.moveTo(-bw / 2, top + s * 0.12);
+  ctx.lineTo(bw / 2, top + s * 0.12);
+  ctx.stroke();
+
+  // tip
+  ctx.beginPath();
+  ctx.moveTo(-bw / 2, shoulder);
+  ctx.lineTo(0, tipY);
+  ctx.lineTo(bw / 2, shoulder);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 }
