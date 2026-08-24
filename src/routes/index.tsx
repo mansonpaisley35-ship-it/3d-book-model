@@ -7,17 +7,17 @@ const BookScene = lazy(() => import("@/components/book/BookScene"));
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Press Book — Three.js Hardcover Study" },
+      { title: "Book Canvas — 3D Hardcover Mockup Studio" },
       {
         name: "description",
         content:
-          "A procedurally modelled Stripe Press–style hardcover, rebuilt in three.js with true joint grooves, cloth sheen and striated page edges.",
+          "Upload your own front, back, spine and page-edge artwork onto a procedurally modelled cloth hardcover and inspect it from every angle in 3D.",
       },
-      { property: "og:title", content: "Press Book — Three.js Hardcover Study" },
+      { property: "og:title", content: "Book Canvas — 3D Hardcover Mockup Studio" },
       {
         property: "og:description",
         content:
-          "A procedurally modelled Stripe Press–style hardcover, rebuilt in three.js with true joint grooves, cloth sheen and striated page edges.",
+          "Upload your own front, back, spine and page-edge artwork onto a procedurally modelled cloth hardcover and inspect it from every angle in 3D.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -39,17 +39,16 @@ function Index() {
 
       <div className="pointer-events-none relative z-10 flex min-h-screen flex-col justify-between p-8 md:p-14">
         <header>
-          <p className="text-[11px] tracking-[0.35em] text-[#8fa3ba] uppercase">Press</p>
+          <p className="text-[11px] tracking-[0.35em] text-[#8fa3ba] uppercase">Book Canvas</p>
           <h1 className="mt-3 max-w-md font-serif text-3xl leading-tight text-[#e8eef5] md:text-4xl">
-            The Origins of Efficiency
+            Your artwork, case-bound
           </h1>
         </header>
 
         <footer className="flex flex-wrap items-end justify-between gap-6">
           <p className="max-w-sm text-sm leading-relaxed text-[#8fa3ba]">
-            Case-bound hardcover modelled procedurally in three.js — one extruded profile
-            gives symmetric joint grooves on both boards, a rounded spine and smooth,
-            continuous normals.
+            A blank cloth hardcover modelled procedurally in three.js. Tap the pencil on the
+            cover to import images for the front, back, spine and page edges.
           </p>
           <p className="text-[11px] tracking-[0.2em] text-[#5f7387]">
             DRAG TO ORBIT · SCROLL TO ZOOM
