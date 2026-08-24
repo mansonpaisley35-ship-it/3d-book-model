@@ -274,7 +274,7 @@ export function Book({
     group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
   });
 
-  const pencilProps = {
+  const quillProps = {
     transparent: true,
     depthWrite: false,
     roughness: 0.5,
