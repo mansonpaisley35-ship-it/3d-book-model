@@ -305,18 +305,18 @@ export function Book({
         </mesh>
       )}
 
-      {/* front cover artwork */}
+      {/* front cover artwork — stops short of the joint groove */}
       {frontTex && (
-        <mesh position={[0.02, 0, T / 2 + 0.004]}>
-          <planeGeometry args={[W - 0.12, H - 0.12]} />
+        <mesh position={[PANEL_CX, 0, T / 2 + 0.004]}>
+          <planeGeometry args={[PANEL_W, PANEL_H]} />
           <meshStandardMaterial map={frontTex} {...artProps} />
         </mesh>
       )}
 
       {/* back cover artwork */}
       {backTex && (
-        <mesh position={[-0.02, 0, -T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
-          <planeGeometry args={[W - 0.12, H - 0.12]} />
+        <mesh position={[PANEL_CX, 0, -T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[PANEL_W, PANEL_H]} />
           <meshStandardMaterial map={backTex} {...artProps} />
         </mesh>
       )}
@@ -329,33 +329,48 @@ export function Book({
         </mesh>
       )}
 
-      {/* pencil = edit button, front top-right corner */}
+      {/* quill = edit button, front cover, near the fore-edge corner */}
       <mesh
-        position={[W / 2 - 0.34, H / 2 - 0.34, T / 2 + 0.012]}
+        position={[W / 2 - 0.36, -H / 2 + 0.42, T / 2 + 0.012]}
         onClick={(e) => {
           e.stopPropagation();
-          onEdit?.();
+          onEdit?.("front");
         }}
         onPointerOver={() => (document.body.style.cursor = "pointer")}
         onPointerOut={() => (document.body.style.cursor = "auto")}
       >
-        <planeGeometry args={[0.34, 0.34]} />
-        <meshPhysicalMaterial {...pencilProps} alphaMap={maps.pencil} />
+        <planeGeometry args={[0.4, 0.4]} />
+        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} />
       </mesh>
 
-      {/* pencil = edit button, back cover corner */}
+      {/* quill = edit button, back cover, mirrored to its own fore-edge corner */}
       <mesh
-        position={[-(W / 2 - 0.34), H / 2 - 0.34, -T / 2 - 0.012]}
+        position={[W / 2 - 0.36, -H / 2 + 0.42, -T / 2 - 0.012]}
         rotation={[0, Math.PI, 0]}
         onClick={(e) => {
           e.stopPropagation();
-          onEdit?.();
+          onEdit?.("back");
         }}
         onPointerOver={() => (document.body.style.cursor = "pointer")}
         onPointerOut={() => (document.body.style.cursor = "auto")}
       >
-        <planeGeometry args={[0.34, 0.34]} />
-        <meshPhysicalMaterial {...pencilProps} alphaMap={maps.pencil} opacity={0.85} />
+        <planeGeometry args={[0.4, 0.4]} />
+        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
+      </mesh>
+
+      {/* quill = edit button, spine foot */}
+      <mesh
+        position={[SPINE_SURF - 0.004, -H / 2 + 0.45, 0]}
+        rotation={[0, -Math.PI / 2, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit?.("spine");
+        }}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "auto")}
+      >
+        <planeGeometry args={[0.3, 0.3]} />
+        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>
     </group>
   );
