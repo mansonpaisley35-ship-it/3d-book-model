@@ -2,8 +2,14 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Pencil, X } from "lucide-react";
-import { Book, type BookImages } from "./Book";
+import { Feather, RotateCcw, X } from "lucide-react";
+import {
+  Book,
+  DEFAULT_ADJUST,
+  type BookAdjusts,
+  type BookImages,
+  type ImageAdjust,
+} from "./Book";
 
 const VIEWS = {
   cover: new THREE.Vector3(4.2, 1.9, 10.6),
