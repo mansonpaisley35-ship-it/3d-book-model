@@ -82,39 +82,62 @@ export function makeStampMap(w: number, h: number, draw: (ctx: CanvasRenderingCo
   return tex;
 }
 
-/** A simple pencil glyph — the on-cover "edit" affordance. */
-export function drawPencil(ctx: CanvasRenderingContext2D, w: number, h: number) {
+/** An elegant feather-quill glyph — the on-cover "edit" affordance. */
+export function drawQuill(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const s = Math.min(w, h);
   ctx.save();
   ctx.translate(w / 2, h / 2);
-  ctx.rotate(-Math.PI / 4);
+  ctx.scale(s / 100, s / 100);
+  ctx.rotate(0.12);
   ctx.fillStyle = "#fff";
   ctx.strokeStyle = "#fff";
-  ctx.lineWidth = s * 0.055;
+  ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  const bw = s * 0.2; // body width
-  const top = -s * 0.34;
-  const tipY = s * 0.34;
-  const shoulder = tipY - s * 0.16;
-
-  // body
+  // ---- feather vane: two mirrored curves meeting at plume tip and nib ----
   ctx.beginPath();
-  ctx.rect(-bw / 2, top, bw, shoulder - top);
+  ctx.moveTo(30, -44); // plume tip
+  ctx.bezierCurveTo(2, -18, -12, 12, -20, 34); // outer (left) edge down to nib
+  ctx.bezierCurveTo(-4, 26, 16, 8, 34, -14); // inner edge back up
+  ctx.bezierCurveTo(38, -24, 36, -36, 30, -44);
+  ctx.fill();
+
+  // ---- barb separations, cut out of the vane with fine strokes ----------
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6;
+    const sx = 27 - t * 40;
+    const sy = -34 + t * 60;
+    ctx.beginPath();
+    ctx.moveTo(sx + 1, sy - 1);
+    ctx.quadraticCurveTo(sx + 8, sy - 8, sx + 15 - t * 6, sy - 14 + t * 8);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // ---- shaft / rachis, continuing into the nib -------------------------
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(29, -41);
+  ctx.bezierCurveTo(14, -18, -2, 8, -18, 33);
   ctx.stroke();
 
-  // ferrule line
+  // ---- nib ------------------------------------------------------------
   ctx.beginPath();
-  ctx.moveTo(-bw / 2, top + s * 0.12);
-  ctx.lineTo(bw / 2, top + s * 0.12);
-  ctx.stroke();
-
-  // tip
-  ctx.beginPath();
-  ctx.moveTo(-bw / 2, shoulder);
-  ctx.lineTo(0, tipY);
-  ctx.lineTo(bw / 2, shoulder);
+  ctx.moveTo(-13, 26);
+  ctx.lineTo(-27, 44);
+  ctx.lineTo(-19, 28);
   ctx.closePath();
   ctx.fill();
+
+  // ---- ink flourish beneath the nib -----------------------------------
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(-34, 46);
+  ctx.quadraticCurveTo(-10, 52, 24, 40);
+  ctx.stroke();
+
   ctx.restore();
 }

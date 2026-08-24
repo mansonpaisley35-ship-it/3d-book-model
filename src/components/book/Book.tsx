@@ -6,7 +6,7 @@ import {
   makeClothRoughnessMap,
   makePageEdgeMap,
   makeStampMap,
-  drawPencil,
+  drawQuill,
 } from "./textures";
 
 /* ---------------------------------------------------------------------------
@@ -23,12 +23,41 @@ const HINGE_D = 0.05; // groove depth
 const EDGE_ROUND = 0.035; // head/tail edge rounding of the case
 const SPINE_SURF = -W / 2 - 0.062; // just outside the spine crown, for artwork
 
+/* Artwork panel: starts just past the joint groove so the hinge stays bare,
+ * exactly like the printed paper wrap on a real case-bound book. */
+const PANEL_X0 = HINGE_X + HINGE_W + 0.015;
+const PANEL_X1 = W / 2 - 0.05;
+const PANEL_W = PANEL_X1 - PANEL_X0;
+const PANEL_CX = (PANEL_X0 + PANEL_X1) / 2;
+const PANEL_H = H - 0.13;
+
 export type BookImages = {
   front?: string;
   back?: string;
   spine?: string;
   edges?: string;
 };
+
+export type ImageAdjust = {
+  /** zoom, 1 = fitted */
+  scale: number;
+  /** pan in UV units, -0.5..0.5 */
+  offsetX: number;
+  offsetY: number;
+  /** degrees */
+  rotation: number;
+  fit: "cover" | "contain";
+};
+
+export const DEFAULT_ADJUST: ImageAdjust = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0,
+  fit: "cover",
+};
+
+export type BookAdjusts = Partial<Record<keyof BookImages, ImageAdjust>>;
 
 /**
  * The case (both boards + spine) is one continuous cross-section extruded
@@ -94,8 +123,37 @@ function buildPageGeometry() {
   return { geo, pw, ph, pt };
 }
 
+/**
+ * Fit + crop an image into a surface of the given aspect via the texture's
+ * UV transform: repeat = visible slice of the image, offset = pan.
+ */
+function fitTexture(tex: THREE.Texture, planeAspect: number, adj: ImageAdjust) {
+  const img = tex.image as { width?: number; height?: number } | undefined;
+  const ia = img?.width && img?.height ? img.width / img.height : planeAspect;
+
+  let rx = 1;
+  let ry = 1;
+  if (adj.fit === "cover") {
+    if (ia > planeAspect) rx = planeAspect / ia;
+    else ry = ia / planeAspect;
+  } else {
+    if (ia > planeAspect) ry = ia / planeAspect;
+    else rx = planeAspect / ia;
+  }
+  const z = Math.max(0.05, adj.scale);
+  rx /= z;
+  ry /= z;
+
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.center.set(0.5, 0.5);
+  tex.rotation = (adj.rotation * Math.PI) / 180;
+  tex.repeat.set(rx, ry);
+  tex.offset.set(0.5 - rx / 2 - adj.offsetX * (1 - rx), 0.5 - ry / 2 + adj.offsetY * (1 - ry));
+  tex.needsUpdate = true;
+}
+
 /** Load a user-supplied image (data URL or http URL) into a texture. */
-function useImageTexture(url?: string) {
+function useImageTexture(url: string | undefined, planeAspect: number, adj: ImageAdjust) {
   const [tex, setTex] = useState<THREE.Texture | null>(null);
   useEffect(() => {
     if (!url) {
@@ -118,34 +176,44 @@ function useImageTexture(url?: string) {
     };
   }, [url]);
   useEffect(() => () => tex?.dispose(), [tex]);
+  useEffect(() => {
+    if (tex) fitTexture(tex, planeAspect, adj);
+  }, [tex, planeAspect, adj]);
   return tex;
 }
 
 export function Book({
   autoRotate = true,
   images = {},
+  adjusts = {},
   onEdit,
 }: {
   autoRotate?: boolean;
   images?: BookImages;
-  onEdit?: () => void;
+  adjusts?: BookAdjusts;
+  onEdit?: (slot: keyof BookImages) => void;
 }) {
   const group = useRef<THREE.Group>(null);
 
   const caseGeo = useMemo(buildCaseGeometry, []);
   const page = useMemo(buildPageGeometry, []);
 
-  const frontTex = useImageTexture(images.front);
-  const backTex = useImageTexture(images.back);
-  const spineTex = useImageTexture(images.spine);
-  const edgeTex = useImageTexture(images.edges);
+  const aFront = adjusts.front ?? DEFAULT_ADJUST;
+  const aBack = adjusts.back ?? DEFAULT_ADJUST;
+  const aSpine = adjusts.spine ?? DEFAULT_ADJUST;
+  const aEdges = adjusts.edges ?? DEFAULT_ADJUST;
+
+  const frontTex = useImageTexture(images.front, PANEL_W / PANEL_H, aFront);
+  const backTex = useImageTexture(images.back, PANEL_W / PANEL_H, aBack);
+  const spineTex = useImageTexture(images.spine, (T * 0.86) / (H - 0.16), aSpine);
+  const edgeTex = useImageTexture(images.edges, (H - 0.16) / (T * 0.6), aEdges);
 
   const maps = useMemo(() => {
     const clothNormal = makeClothNormalMap();
     const clothRough = makeClothRoughnessMap();
     const pageEdge = makePageEdgeMap();
-    const pencil = makeStampMap(256, 256, drawPencil);
-    return { clothNormal, clothRough, pageEdge, pencil };
+    const quill = makeStampMap(512, 512, drawQuill);
+    return { clothNormal, clothRough, pageEdge, quill };
   }, []);
 
   const clothMaterial = useMemo(
@@ -206,7 +274,7 @@ export function Book({
     group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
   });
 
-  const pencilProps = {
+  const quillProps = {
     transparent: true,
     depthWrite: false,
     roughness: 0.5,
@@ -237,18 +305,18 @@ export function Book({
         </mesh>
       )}
 
-      {/* front cover artwork */}
+      {/* front cover artwork — stops short of the joint groove */}
       {frontTex && (
-        <mesh position={[0.02, 0, T / 2 + 0.004]}>
-          <planeGeometry args={[W - 0.12, H - 0.12]} />
+        <mesh position={[PANEL_CX, 0, T / 2 + 0.004]}>
+          <planeGeometry args={[PANEL_W, PANEL_H]} />
           <meshStandardMaterial map={frontTex} {...artProps} />
         </mesh>
       )}
 
       {/* back cover artwork */}
       {backTex && (
-        <mesh position={[-0.02, 0, -T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
-          <planeGeometry args={[W - 0.12, H - 0.12]} />
+        <mesh position={[PANEL_CX, 0, -T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[PANEL_W, PANEL_H]} />
           <meshStandardMaterial map={backTex} {...artProps} />
         </mesh>
       )}
@@ -261,33 +329,48 @@ export function Book({
         </mesh>
       )}
 
-      {/* pencil = edit button, front top-right corner */}
+      {/* quill = edit button, front cover, near the fore-edge corner */}
       <mesh
-        position={[W / 2 - 0.34, H / 2 - 0.34, T / 2 + 0.012]}
+        position={[W / 2 - 0.36, -H / 2 + 0.42, T / 2 + 0.012]}
         onClick={(e) => {
           e.stopPropagation();
-          onEdit?.();
+          onEdit?.("front");
         }}
         onPointerOver={() => (document.body.style.cursor = "pointer")}
         onPointerOut={() => (document.body.style.cursor = "auto")}
       >
-        <planeGeometry args={[0.34, 0.34]} />
-        <meshPhysicalMaterial {...pencilProps} alphaMap={maps.pencil} />
+        <planeGeometry args={[0.4, 0.4]} />
+        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} />
       </mesh>
 
-      {/* pencil = edit button, back cover corner */}
+      {/* quill = edit button, back cover, mirrored to its own fore-edge corner */}
       <mesh
-        position={[-(W / 2 - 0.34), H / 2 - 0.34, -T / 2 - 0.012]}
+        position={[W / 2 - 0.36, -H / 2 + 0.42, -T / 2 - 0.012]}
         rotation={[0, Math.PI, 0]}
         onClick={(e) => {
           e.stopPropagation();
-          onEdit?.();
+          onEdit?.("back");
         }}
         onPointerOver={() => (document.body.style.cursor = "pointer")}
         onPointerOut={() => (document.body.style.cursor = "auto")}
       >
-        <planeGeometry args={[0.34, 0.34]} />
-        <meshPhysicalMaterial {...pencilProps} alphaMap={maps.pencil} opacity={0.85} />
+        <planeGeometry args={[0.4, 0.4]} />
+        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
+      </mesh>
+
+      {/* quill = edit button, spine foot */}
+      <mesh
+        position={[SPINE_SURF - 0.004, -H / 2 + 0.45, 0]}
+        rotation={[0, -Math.PI / 2, 0]}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit?.("spine");
+        }}
+        onPointerOver={() => (document.body.style.cursor = "pointer")}
+        onPointerOut={() => (document.body.style.cursor = "auto")}
+      >
+        <planeGeometry args={[0.3, 0.3]} />
+        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>
     </group>
   );
