@@ -102,7 +102,12 @@ export default function BookScene() {
 
         <Suspense fallback={null}>
           <group position={[0, 0.15, 0]} scale={0.76}>
-            <Book autoRotate={false} images={images} onEdit={() => setEditing(true)} />
+            <Book
+              autoRotate={false}
+              images={images}
+              adjusts={adjusts}
+              onEdit={(slot) => openEditor(slot)}
+            />
           </group>
 
           {/* soft studio setup: broad key from above-left, cool rim from behind */}
