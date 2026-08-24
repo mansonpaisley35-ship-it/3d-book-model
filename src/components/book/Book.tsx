@@ -123,8 +123,37 @@ function buildPageGeometry() {
   return { geo, pw, ph, pt };
 }
 
+/**
+ * Fit + crop an image into a surface of the given aspect via the texture's
+ * UV transform: repeat = visible slice of the image, offset = pan.
+ */
+function fitTexture(tex: THREE.Texture, planeAspect: number, adj: ImageAdjust) {
+  const img = tex.image as { width?: number; height?: number } | undefined;
+  const ia = img?.width && img?.height ? img.width / img.height : planeAspect;
+
+  let rx = 1;
+  let ry = 1;
+  if (adj.fit === "cover") {
+    if (ia > planeAspect) rx = planeAspect / ia;
+    else ry = ia / planeAspect;
+  } else {
+    if (ia > planeAspect) ry = ia / planeAspect;
+    else rx = planeAspect / ia;
+  }
+  const z = Math.max(0.05, adj.scale);
+  rx /= z;
+  ry /= z;
+
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.center.set(0.5, 0.5);
+  tex.rotation = (adj.rotation * Math.PI) / 180;
+  tex.repeat.set(rx, ry);
+  tex.offset.set(0.5 - rx / 2 - adj.offsetX * (1 - rx), 0.5 - ry / 2 + adj.offsetY * (1 - ry));
+  tex.needsUpdate = true;
+}
+
 /** Load a user-supplied image (data URL or http URL) into a texture. */
-function useImageTexture(url?: string) {
+function useImageTexture(url: string | undefined, planeAspect: number, adj: ImageAdjust) {
   const [tex, setTex] = useState<THREE.Texture | null>(null);
   useEffect(() => {
     if (!url) {
@@ -147,34 +176,44 @@ function useImageTexture(url?: string) {
     };
   }, [url]);
   useEffect(() => () => tex?.dispose(), [tex]);
+  useEffect(() => {
+    if (tex) fitTexture(tex, planeAspect, adj);
+  }, [tex, planeAspect, adj]);
   return tex;
 }
 
 export function Book({
   autoRotate = true,
   images = {},
+  adjusts = {},
   onEdit,
 }: {
   autoRotate?: boolean;
   images?: BookImages;
-  onEdit?: () => void;
+  adjusts?: BookAdjusts;
+  onEdit?: (slot: keyof BookImages) => void;
 }) {
   const group = useRef<THREE.Group>(null);
 
   const caseGeo = useMemo(buildCaseGeometry, []);
   const page = useMemo(buildPageGeometry, []);
 
-  const frontTex = useImageTexture(images.front);
-  const backTex = useImageTexture(images.back);
-  const spineTex = useImageTexture(images.spine);
-  const edgeTex = useImageTexture(images.edges);
+  const aFront = adjusts.front ?? DEFAULT_ADJUST;
+  const aBack = adjusts.back ?? DEFAULT_ADJUST;
+  const aSpine = adjusts.spine ?? DEFAULT_ADJUST;
+  const aEdges = adjusts.edges ?? DEFAULT_ADJUST;
+
+  const frontTex = useImageTexture(images.front, PANEL_W / PANEL_H, aFront);
+  const backTex = useImageTexture(images.back, PANEL_W / PANEL_H, aBack);
+  const spineTex = useImageTexture(images.spine, (T * 0.86) / (H - 0.16), aSpine);
+  const edgeTex = useImageTexture(images.edges, (H - 0.16) / (T * 0.6), aEdges);
 
   const maps = useMemo(() => {
     const clothNormal = makeClothNormalMap();
     const clothRough = makeClothRoughnessMap();
     const pageEdge = makePageEdgeMap();
-    const pencil = makeStampMap(256, 256, drawPencil);
-    return { clothNormal, clothRough, pageEdge, pencil };
+    const quill = makeStampMap(512, 512, drawQuill);
+    return { clothNormal, clothRough, pageEdge, quill };
   }, []);
 
   const clothMaterial = useMemo(
