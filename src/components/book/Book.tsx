@@ -6,7 +6,7 @@ import {
   makeClothRoughnessMap,
   makePageEdgeMap,
   makeStampMap,
-  drawPencil,
+  drawQuill,
 } from "./textures";
 
 /* ---------------------------------------------------------------------------
@@ -23,12 +23,41 @@ const HINGE_D = 0.05; // groove depth
 const EDGE_ROUND = 0.035; // head/tail edge rounding of the case
 const SPINE_SURF = -W / 2 - 0.062; // just outside the spine crown, for artwork
 
+/* Artwork panel: starts just past the joint groove so the hinge stays bare,
+ * exactly like the printed paper wrap on a real case-bound book. */
+const PANEL_X0 = HINGE_X + HINGE_W + 0.015;
+const PANEL_X1 = W / 2 - 0.05;
+const PANEL_W = PANEL_X1 - PANEL_X0;
+const PANEL_CX = (PANEL_X0 + PANEL_X1) / 2;
+const PANEL_H = H - 0.13;
+
 export type BookImages = {
   front?: string;
   back?: string;
   spine?: string;
   edges?: string;
 };
+
+export type ImageAdjust = {
+  /** zoom, 1 = fitted */
+  scale: number;
+  /** pan in UV units, -0.5..0.5 */
+  offsetX: number;
+  offsetY: number;
+  /** degrees */
+  rotation: number;
+  fit: "cover" | "contain";
+};
+
+export const DEFAULT_ADJUST: ImageAdjust = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0,
+  fit: "cover",
+};
+
+export type BookAdjusts = Partial<Record<keyof BookImages, ImageAdjust>>;
 
 /**
  * The case (both boards + spine) is one continuous cross-section extruded
