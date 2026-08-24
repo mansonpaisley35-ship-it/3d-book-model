@@ -47,7 +47,9 @@ export default function BookScene() {
   const [free, setFree] = useState(false);
   const [view, setView] = useState<ViewKey>("cover");
   const [images, setImages] = useState<BookImages>({});
+  const [adjusts, setAdjusts] = useState<BookAdjusts>({});
   const [editing, setEditing] = useState(false);
+  const [openSlot, setOpenSlot] = useState<keyof BookImages>("front");
 
   const pick = (v: ViewKey) => {
     setView(v);
@@ -61,6 +63,7 @@ export default function BookScene() {
       if (prev[key]) URL.revokeObjectURL(prev[key]!);
       return { ...prev, [key]: url };
     });
+    setAdjusts((prev) => ({ ...prev, [key]: { ...DEFAULT_ADJUST } }));
   };
 
   const clearImage = (key: keyof BookImages) => {
@@ -70,6 +73,19 @@ export default function BookScene() {
       delete next[key];
       return next;
     });
+    setAdjusts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const patchAdjust = (key: keyof BookImages, patch: Partial<ImageAdjust>) =>
+    setAdjusts((prev) => ({ ...prev, [key]: { ...DEFAULT_ADJUST, ...prev[key], ...patch } }));
+
+  const openEditor = (slot: keyof BookImages) => {
+    setOpenSlot(slot);
+    setEditing(true);
   };
 
   return (
