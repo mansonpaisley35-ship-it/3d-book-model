@@ -186,11 +186,13 @@ export function Book({
   autoRotate = true,
   images = {},
   adjusts = {},
+  pages = [],
   onEdit,
 }: {
   autoRotate?: boolean;
   images?: BookImages;
   adjusts?: BookAdjusts;
+  pages?: PdfPage[];
   onEdit?: (slot: keyof BookImages) => void;
 }) {
   const group = useRef<THREE.Group>(null);
