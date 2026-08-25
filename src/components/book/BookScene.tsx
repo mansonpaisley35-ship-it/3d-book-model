@@ -329,7 +329,6 @@ export default function BookScene() {
             })}
           </div>
 
-          <p className="mt-5 text-[11px] leading-relaxed text-[#6f welcome]"></p>
           <p className="mt-5 text-[11px] leading-relaxed text-[#7f93aa]">
             Cover artwork stops just past the joint groove, so the hinge stays visible like a real
             case-bound book.
