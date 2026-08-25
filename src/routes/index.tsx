@@ -47,8 +47,8 @@ function Index() {
 
         <footer className="flex flex-wrap items-end justify-between gap-6">
           <p className="max-w-sm text-sm leading-relaxed text-[#8fa3ba]">
-            A blank cloth hardcover modelled procedurally in three.js. Tap the pencil on the
-            cover to import images for the front, back, spine and page edges.
+            A blank cloth hardcover modelled procedurally in three.js. Tap a quill on the cover,
+            back or spine to import artwork, then crop and align it precisely.
           </p>
           <p className="text-[11px] tracking-[0.2em] text-[#5f7387]">
             DRAG TO ORBIT · SCROLL TO ZOOM
