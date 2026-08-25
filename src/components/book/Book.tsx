@@ -8,6 +8,8 @@ import {
   makeStampMap,
   drawQuill,
 } from "./textures";
+import { PageBlock } from "./PageBlock";
+import type { PdfPage } from "./pdf";
 
 /* ---------------------------------------------------------------------------
  * Dimensions of a Stripe Press hardcover (in scene units, 1 unit ~= 2.5 cm)
