@@ -199,10 +199,10 @@ export default function BookScene() {
       </div>
 
       <button
-        onClick={() => setEditing(true)}
+        onClick={() => openEditor(openSlot)}
         className="pointer-events-auto absolute top-6 right-6 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
       >
-        <Pencil size={13} /> Edit
+        <Feather size={13} /> Edit
       </button>
 
       {editing && (
@@ -221,44 +221,119 @@ export default function BookScene() {
             </button>
           </div>
 
-          <div className="mt-6 space-y-4">
-            {SLOTS.map(({ key, label, hint }) => (
-              <div key={key} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm text-[#e8eef5]">{label}</p>
-                    <p className="mt-0.5 text-[11px] text-[#7f93aa]">{hint}</p>
+          <div className="mt-6 space-y-3">
+            {SLOTS.map(({ key, label, hint }) => {
+              const adj = { ...DEFAULT_ADJUST, ...adjusts[key] };
+              const open = openSlot === key;
+              return (
+                <div key={key} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <button
+                    onClick={() => setOpenSlot(key)}
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <div>
+                      <p className="text-sm text-[#e8eef5]">{label}</p>
+                      <p className="mt-0.5 text-[11px] text-[#7f93aa]">{hint}</p>
+                    </div>
+                    {images[key] && (
+                      <img
+                        src={images[key]}
+                        alt={`${label} preview`}
+                        className="h-12 w-9 rounded object-cover"
+                      />
+                    )}
+                  </button>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
+                      {images[key] ? "Replace" : "Upload"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => setImage(key, e.target.files?.[0])}
+                      />
+                    </label>
+                    {images[key] && (
+                      <button
+                        onClick={() => clearImage(key)}
+                        className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
-                  {images[key] && (
-                    <img
-                      src={images[key]}
-                      alt={`${label} preview`}
-                      className="h-12 w-9 rounded object-cover"
-                    />
+
+                  {images[key] && open && (
+                    <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">
+                          Crop &amp; fit
+                        </p>
+                        <button
+                          onClick={() => patchAdjust(key, { ...DEFAULT_ADJUST })}
+                          className="flex items-center gap-1 text-[10px] tracking-[0.14em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
+                        >
+                          <RotateCcw size={11} /> Reset
+                        </button>
+                      </div>
+
+                      <div className="flex gap-1 rounded-full border border-white/10 p-1">
+                        {(["cover", "contain"] as const).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => patchAdjust(key, { fit: f })}
+                            className={`flex-1 rounded-full px-2 py-1 text-[10px] tracking-[0.14em] uppercase transition-colors ${
+                              adj.fit === f
+                                ? "bg-[#e8eef5] text-[#101720]"
+                                : "text-[#9db0c6] hover:text-[#e8eef5]"
+                            }`}
+                          >
+                            {f === "cover" ? "Fill" : "Fit"}
+                          </button>
+                        ))}
+                      </div>
+
+                      {(
+                        [
+                          ["scale", "Zoom", 0.5, 3, 0.01],
+                          ["offsetX", "Pan X", -0.5, 0.5, 0.005],
+                          ["offsetY", "Pan Y", -0.5, 0.5, 0.005],
+                          ["rotation", "Rotate", -180, 180, 1],
+                        ] as [keyof ImageAdjust, string, number, number, number][]
+                      ).map(([field, label2, min, max, step]) => (
+                        <label key={field} className="block">
+                          <span className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                            {label2}
+                            <span className="tabular-nums text-[#7f93aa]">
+                              {(adj[field] as number).toFixed(field === "rotation" ? 0 : 2)}
+                            </span>
+                          </span>
+                          <input
+                            type="range"
+                            min={min}
+                            max={max}
+                            step={step}
+                            value={adj[field] as number}
+                            onChange={(e) =>
+                              patchAdjust(key, { [field]: Number(e.target.value) } as Partial<ImageAdjust>)
+                            }
+                            className="mt-1 w-full accent-[#e8eef5]"
+                          />
+                        </label>
+                      ))}
+                    </div>
                   )}
                 </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
-                    {images[key] ? "Replace" : "Upload"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => setImage(key, e.target.files?.[0])}
-                    />
-                  </label>
-                  {images[key] && (
-                    <button
-                      onClick={() => clearImage(key)}
-                      className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          <p className="mt-5 text-[11px] leading-relaxed text-[#6f welcome]"></p>
+          <p className="mt-5 text-[11px] leading-relaxed text-[#7f93aa]">
+            Cover artwork stops just past the joint groove, so the hinge stays visible like a real
+            case-bound book.
+          </p>
         </div>
       )}
     </div>
