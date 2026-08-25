@@ -2,7 +2,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Feather, RotateCcw, X } from "lucide-react";
+import { Feather, FileText, Loader2, RotateCcw, X } from "lucide-react";
 import {
   Book,
   DEFAULT_ADJUST,
@@ -10,6 +10,7 @@ import {
   type BookImages,
   type ImageAdjust,
 } from "./Book";
+import { disposePdfPages, type PdfPage } from "./pdf";
 
 const VIEWS = {
   cover: new THREE.Vector3(4.2, 1.9, 10.6),
@@ -50,6 +51,37 @@ export default function BookScene() {
   const [adjusts, setAdjusts] = useState<BookAdjusts>({});
   const [editing, setEditing] = useState(false);
   const [openSlot, setOpenSlot] = useState<keyof BookImages>("front");
+  const [pages, setPages] = useState<PdfPage[]>([]);
+  const [pdfName, setPdfName] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState<{ done: number; total: number } | null>(null);
+
+  const importPdf = async (file?: File | null) => {
+    if (!file) return;
+    setPdfBusy({ done: 0, total: 0 });
+    try {
+      const { renderPdfPages } = await import("./pdf");
+      const rendered = await renderPdfPages(file, {
+        onProgress: (done, total) => setPdfBusy({ done, total }),
+      });
+      setPages((prev) => {
+        disposePdfPages(prev);
+        return rendered;
+      });
+      setPdfName(file.name);
+    } catch (err) {
+      console.error("PDF import failed", err);
+    } finally {
+      setPdfBusy(null);
+    }
+  };
+
+  const clearPdf = () => {
+    setPages((prev) => {
+      disposePdfPages(prev);
+      return [];
+    });
+    setPdfName(null);
+  };
 
   const pick = (v: ViewKey) => {
     setView(v);
@@ -106,6 +138,7 @@ export default function BookScene() {
               autoRotate={false}
               images={images}
               adjusts={adjusts}
+              pages={pages}
               onEdit={(slot) => openEditor(slot)}
             />
           </group>
@@ -221,7 +254,52 @@ export default function BookScene() {
             </button>
           </div>
 
-          <div className="mt-6 space-y-3">
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm text-[#e8eef5]">Interior pages</p>
+                <p className="mt-0.5 text-[11px] text-[#7f93aa]">
+                  Import a PDF — each page becomes a real leaf in the text block
+                </p>
+              </div>
+              <FileText size={15} className="mt-1 shrink-0 text-[#7f93aa]" />
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
+                {pages.length ? "Replace PDF" : "Import PDF"}
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={(e) => void importPdf(e.target.files?.[0])}
+                />
+              </label>
+              {pages.length > 0 && (
+                <button
+                  onClick={clearPdf}
+                  className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+
+            {pdfBusy && (
+              <p className="mt-3 flex items-center gap-2 text-[11px] text-[#9db0c6]">
+                <Loader2 size={12} className="animate-spin" />
+                Rendering pages {pdfBusy.done}
+                {pdfBusy.total ? ` / ${pdfBusy.total}` : ""}
+              </p>
+            )}
+            {!pdfBusy && pages.length > 0 && (
+              <p className="mt-3 text-[11px] text-[#7f93aa]">
+                {pdfName} — {pages.length} pages on {Math.ceil(pages.length / 2)} leaves
+              </p>
+            )}
+          </div>
+
+          <div className="mt-3 space-y-3">
             {SLOTS.map(({ key, label, hint }) => {
               const adj = { ...DEFAULT_ADJUST, ...adjusts[key] };
               const open = openSlot === key;
