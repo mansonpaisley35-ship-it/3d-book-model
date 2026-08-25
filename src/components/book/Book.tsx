@@ -8,6 +8,8 @@ import {
   makeStampMap,
   drawQuill,
 } from "./textures";
+import { PageBlock } from "./PageBlock";
+import type { PdfPage } from "./pdf";
 
 /* ---------------------------------------------------------------------------
  * Dimensions of a Stripe Press hardcover (in scene units, 1 unit ~= 2.5 cm)
@@ -186,11 +188,13 @@ export function Book({
   autoRotate = true,
   images = {},
   adjusts = {},
+  pages = [],
   onEdit,
 }: {
   autoRotate?: boolean;
   images?: BookImages;
   adjusts?: BookAdjusts;
+  pages?: PdfPage[];
   onEdit?: (slot: keyof BookImages) => void;
 }) {
   const group = useRef<THREE.Group>(null);
@@ -288,14 +292,20 @@ export function Book({
     <group ref={group}>
       <mesh geometry={caseGeo} material={clothMaterial} castShadow receiveShadow />
 
-      {/* text block, seated toward the fore-edge like a real case-bound book */}
-      <mesh
-        geometry={page.geo}
-        material={pageMaterials}
-        position={[0.055, 0, 0]}
-        castShadow
-        receiveShadow
-      />
+      {/* text block, seated toward the fore-edge like a real case-bound book.
+       * With a PDF imported it becomes a stack of real leaves, each hinged at
+       * the spine and carrying its rendered page. */}
+      <group position={[0.055, 0, 0]}>
+        <PageBlock
+          width={page.pw}
+          height={page.ph}
+          thickness={page.pt}
+          pages={pages}
+          fillGeometry={page.geo}
+          fillMaterials={pageMaterials}
+        />
+      </group>
+
 
       {/* head-edge hairline (hidden once a custom edge image is supplied) */}
       {!edgeTex && (
