@@ -22,10 +22,10 @@ function Leaf({
   height: number;
   thickness: number;
   z: number;
-  recto?: THREE.Texture;
-  verso?: THREE.Texture;
+  recto?: THREE.Texture | undefined;
+  verso?: THREE.Texture | undefined;
   paper: THREE.Material;
-  flip?: number;
+  flip?: number | undefined;
 }) {
   const geo = useMemo(
     () => new THREE.BoxGeometry(width, height, thickness),
