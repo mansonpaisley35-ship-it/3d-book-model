@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import * as pdfjs from "pdfjs-dist";
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export type PdfPage = {
   index: number;
@@ -18,10 +22,6 @@ export async function renderPdfPages(
     onProgress,
   }: { maxPages?: number; targetWidth?: number; onProgress?: (done: number, total: number) => void } = {},
 ): Promise<PdfPage[]> {
-  const pdfjs = await import("pdfjs-dist");
-  const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-
   console.log("pdf: worker", workerUrl);
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data }).promise;
