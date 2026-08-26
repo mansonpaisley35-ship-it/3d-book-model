@@ -22,8 +22,10 @@ export async function renderPdfPages(
   const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
+  console.log("pdf: worker", workerUrl);
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data }).promise;
+  console.log("pdf: doc pages", doc.numPages);
   const total = Math.min(doc.numPages, maxPages);
   const out: PdfPage[] = [];
 
