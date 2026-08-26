@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import * as pdfjs from "pdfjs-dist";
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 export type PdfPage = {
   index: number;
@@ -18,10 +22,6 @@ export async function renderPdfPages(
     onProgress,
   }: { maxPages?: number; targetWidth?: number; onProgress?: (done: number, total: number) => void } = {},
 ): Promise<PdfPage[]> {
-  const pdfjs = await import("pdfjs-dist");
-  const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data }).promise;
   const total = Math.min(doc.numPages, maxPages);
@@ -38,7 +38,7 @@ export async function renderPdfPages(
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "#fdfaf2";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, viewport }).promise;
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
