@@ -1,8 +1,8 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { Suspense, useEffect, useRef, useState } from "react";
-import { Feather, FileText, Loader2, RotateCcw, X } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Feather, FileText, Loader2, RotateCcw, Ruler, Sparkles, X } from "lucide-react";
 import {
   Book,
   DEFAULT_ADJUST,
@@ -10,6 +10,17 @@ import {
   type BookImages,
   type ImageAdjust,
 } from "./Book";
+import {
+  CLOTH_SWATCHES,
+  DEFAULT_ASPECTS,
+  PAPERS,
+  TRIMS,
+  suggestConfig,
+  type Aspects,
+  type BookConfig,
+  type PaperKey,
+  type TrimKey,
+} from "./config";
 import { disposePdfPages, type PdfPage } from "./pdf";
 
 const VIEWS = {
@@ -28,13 +39,74 @@ const SLOTS: { key: keyof BookImages; label: string; hint: string }[] = [
   { key: "edges", label: "Page edges", hint: "Wraps fore-edge, head & tail" },
 ];
 
-function CameraRig({ view, active }: { view: ViewKey; active: boolean }) {
+type NumField = [keyof BookConfig, string, number, number, number, number?];
+
+const GROUPS: { title: string; fields: NumField[] }[] = [
+  {
+    title: "Dimensions",
+    fields: [
+      ["width", "Width", 2, 6, 0.01],
+      ["height", "Height", 3, 8, 0.01],
+      ["pageDepth", "Depth of text block", 0.2, 2.6, 0.01],
+      ["boardThickness", "Cover thickness", 0.03, 0.2, 0.005, 3],
+      ["cornerRadius", "Corner radius", 0, 0.14, 0.005, 3],
+      ["edgeRound", "Head/tail rounding", 0.005, 0.09, 0.005, 3],
+    ],
+  },
+  {
+    title: "Joint & spine",
+    fields: [
+      ["grooveOffset", "Groove position", 0.06, 0.55, 0.005, 3],
+      ["grooveWidth", "Groove width", 0.03, 0.3, 0.005, 3],
+      ["grooveDepth", "Groove depth", 0.005, 0.12, 0.002, 3],
+      ["spineBuckle", "Spine buckle", 0, 0.2, 0.005, 3],
+    ],
+  },
+  {
+    title: "Page margins",
+    fields: [
+      ["marginTop", "Top", 0, 0.3, 0.005, 3],
+      ["marginBottom", "Bottom", 0, 0.3, 0.005, 3],
+      ["marginFore", "Fore-edge", 0, 0.3, 0.005, 3],
+    ],
+  },
+  {
+    title: "Material",
+    fields: [
+      ["clothRoughness", "Cloth roughness", 0.2, 1, 0.01],
+      ["clothSheen", "Cloth sheen", 0, 1, 0.01],
+    ],
+  },
+  {
+    title: "Light & shadow",
+    fields: [
+      ["ambient", "Ambient", 0, 1.5, 0.01],
+      ["keyIntensity", "Key light", 0, 6, 0.05],
+      ["keyAzimuth", "Key rotation", -180, 180, 1, 0],
+      ["keyElevation", "Key height", 5, 85, 1, 0],
+      ["rimIntensity", "Rim light", 0, 4, 0.05],
+      ["envIntensity", "Studio bounce", 0, 2, 0.02],
+      ["shadowOpacity", "Shadow strength", 0, 1, 0.01],
+      ["shadowBlur", "Shadow softness", 0.5, 6, 0.1],
+    ],
+  },
+];
+
+const COLOR_FIELDS: [keyof BookConfig, string][] = [
+  ["clothColor", "Boards"],
+  ["spineColor", "Spine"],
+  ["pageColor", "Paper"],
+  ["edgeColor", "Page edges"],
+  ["headbandColor", "Head hairline"],
+];
+
+function CameraRig({ view, active, dist }: { view: ViewKey; active: boolean; dist: number }) {
   const { camera } = useThree();
   const target = useRef(VIEWS.cover.clone());
 
   useEffect(() => {
-    target.current.copy(VIEWS[view]);
-  }, [view]);
+    target.current.copy(VIEWS[view]).multiplyScalar(dist);
+  }, [view, dist]);
 
   useFrame((_, dt) => {
     if (!active) return;
@@ -50,10 +122,24 @@ export default function BookScene() {
   const [images, setImages] = useState<BookImages>({});
   const [adjusts, setAdjusts] = useState<BookAdjusts>({});
   const [editing, setEditing] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [openSlot, setOpenSlot] = useState<keyof BookImages>("front");
   const [pages, setPages] = useState<PdfPage[]>([]);
   const [pdfName, setPdfName] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState<{ done: number; total: number } | null>(null);
+
+  const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
+  const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
+
+  /** Change one of the high-level aspects and re-derive the suggested build. */
+  const applyAspects = (patch: Partial<Aspects>) => {
+    const next = { ...aspects, ...patch };
+    setAspects(next);
+    setConfig(suggestConfig(next));
+  };
+
+  const patchConfig = (patch: Partial<BookConfig>) =>
+    setConfig((prev) => ({ ...prev, ...patch }));
 
   const importPdf = async (file?: File | null) => {
     if (!file) return;
@@ -117,13 +203,36 @@ export default function BookScene() {
 
   const openEditor = (slot: keyof BookImages) => {
     setOpenSlot(slot);
+    setBuilding(false);
     setEditing(true);
   };
+
+  // keep the book comfortably framed whatever size it is built at
+  const fit = useMemo(() => {
+    const span = Math.max(config.height, config.width * 1.25);
+    return { scale: (0.76 * 5.0) / span, dist: Math.max(0.85, span / 5.0) };
+  }, [config.height, config.width]);
+
+  const key = useMemo(() => {
+    const az = (config.keyAzimuth * Math.PI) / 180;
+    const el = (config.keyElevation * Math.PI) / 180;
+    const r = 11;
+    return [
+      Math.sin(az) * Math.cos(el) * r,
+      Math.sin(el) * r,
+      Math.cos(az) * Math.cos(el) * r,
+    ] as [number, number, number];
+  }, [config.keyAzimuth, config.keyElevation]);
+
+  const panelClass =
+    "pointer-events-auto absolute inset-y-0 right-0 z-20 w-full max-w-sm overflow-y-auto border-l border-white/10 bg-[#0e1319]/95 p-6 backdrop-blur-xl";
+  const chipClass =
+    "rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]";
 
   return (
     <div className="relative h-full w-full">
       <Canvas
-        shadows
+        shadows={config.shadows}
         dpr={[1, 2]}
         camera={{ position: [4.2, 1.9, 10.6], fov: 30 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
@@ -133,30 +242,31 @@ export default function BookScene() {
         <fog attach="fog" args={["#0e1319", 16, 30]} />
 
         <Suspense fallback={null}>
-          <group position={[0, 0.15, 0]} scale={0.76}>
+          <group position={[0, 0.15, 0]} scale={fit.scale}>
             <Book
               autoRotate={false}
               images={images}
               adjusts={adjusts}
               pages={pages}
+              config={config}
               onEdit={(slot) => openEditor(slot)}
             />
           </group>
 
-          {/* soft studio setup: broad key from above-left, cool rim from behind */}
-          <ambientLight intensity={0.32} />
+          {/* soft studio setup: broad key light, cool rim from behind */}
+          <ambientLight intensity={config.ambient} />
           <directionalLight
-            position={[5, 8, 6]}
-            intensity={2.4}
-            castShadow
+            position={key}
+            intensity={config.keyIntensity}
+            castShadow={config.shadows}
             shadow-mapSize={[2048, 2048]}
             shadow-bias={-0.0006}
           />
-          <directionalLight position={[-6, 3, -5]} intensity={1.1} color="#7fa6d6" />
+          <directionalLight position={[-6, 3, -5]} intensity={config.rimIntensity} color="#7fa6d6" />
           <spotLight position={[0, 7, -6]} angle={0.6} penumbra={1} intensity={0.8} color="#cfe0f5" />
 
           {/* hand-built studio environment (no remote HDRI): large soft box lights */}
-          <Environment resolution={256} environmentIntensity={0.6} frames={1}>
+          <Environment resolution={256} environmentIntensity={config.envIntensity} frames={1}>
             <color attach="background" args={["#111820"]} />
             <Lightformer
               form="rect"
@@ -184,23 +294,25 @@ export default function BookScene() {
             />
           </Environment>
 
-          <ContactShadows
-            position={[0, -2.05, 0]}
-            opacity={0.5}
-            scale={10}
-            blur={2.6}
-            far={4}
-            resolution={1024}
-            color="#000000"
-          />
+          {config.shadows && (
+            <ContactShadows
+              position={[0, -2.05, 0]}
+              opacity={config.shadowOpacity}
+              scale={10}
+              blur={config.shadowBlur}
+              far={4}
+              resolution={1024}
+              color="#000000"
+            />
+          )}
         </Suspense>
 
-        <CameraRig view={view} active={!free} />
+        <CameraRig view={view} active={!free} dist={fit.dist} />
         <OrbitControls
           enabled={free}
           enablePan={false}
           minDistance={5}
-          maxDistance={18}
+          maxDistance={22}
           minPolarAngle={0.15}
           maxPolarAngle={Math.PI / 1.9}
           enableDamping
@@ -216,12 +328,12 @@ export default function BookScene() {
             ["head", "Head"],
             ["edge", "Fore-edge"],
           ] as [ViewKey, string][]
-        ).map(([key, label]) => (
+        ).map(([k, label]) => (
           <button
-            key={key}
-            onClick={() => pick(key)}
+            key={k}
+            onClick={() => pick(k)}
             className={`rounded-full px-4 py-1.5 text-[11px] tracking-[0.14em] uppercase transition-colors ${
-              view === key && !free
+              view === k && !free
                 ? "bg-[#e8eef5] text-[#101720]"
                 : "text-[#9db0c6] hover:text-[#e8eef5]"
             }`}
@@ -231,15 +343,199 @@ export default function BookScene() {
         ))}
       </div>
 
-      <button
-        onClick={() => openEditor(openSlot)}
-        className="pointer-events-auto absolute top-6 right-6 flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
-      >
-        <Feather size={13} /> Edit
-      </button>
+      <div className="pointer-events-auto absolute top-6 right-6 flex gap-2">
+        <button
+          onClick={() => {
+            setEditing(false);
+            setBuilding((v) => !v);
+          }}
+          className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
+        >
+          <Ruler size={13} /> Build
+        </button>
+        <button
+          onClick={() => openEditor(openSlot)}
+          className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
+        >
+          <Feather size={13} /> Artwork
+        </button>
+      </div>
+
+      {building && (
+        <div className={panelClass}>
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[10px] tracking-[0.3em] text-[#7f93aa] uppercase">Construction</p>
+              <h2 className="mt-2 font-serif text-xl text-[#e8eef5]">Build the book</h2>
+            </div>
+            <button
+              onClick={() => setBuilding(false)}
+              aria-label="Close build panel"
+              className="rounded-full border border-white/10 p-2 text-[#9db0c6] hover:text-[#e8eef5]"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* -------- suggested build from a few high-level aspects -------- */}
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm text-[#e8eef5]">Suggested build</p>
+                <p className="mt-0.5 text-[11px] text-[#7f93aa]">
+                  Pick the basics and every groove, board and margin is proportioned for you
+                </p>
+              </div>
+              <Sparkles size={15} className="mt-1 shrink-0 text-[#7f93aa]" />
+            </div>
+
+            <label className="mt-4 block">
+              <span className="text-[11px] text-[#9db0c6]">Trim size</span>
+              <select
+                value={aspects.trim}
+                onChange={(e) => applyAspects({ trim: e.target.value as TrimKey })}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-[#131a22] px-3 py-2 text-[12px] text-[#e8eef5]"
+              >
+                {Object.entries(TRIMS).map(([k, t]) => (
+                  <option key={k} value={k}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mt-3 block">
+              <span className="text-[11px] text-[#9db0c6]">Paper stock</span>
+              <select
+                value={aspects.paper}
+                onChange={(e) => applyAspects({ paper: e.target.value as PaperKey })}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-[#131a22] px-3 py-2 text-[12px] text-[#e8eef5]"
+              >
+                {Object.entries(PAPERS).map(([k, p]) => (
+                  <option key={k} value={k}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="mt-3 block">
+              <span className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                Page count
+                <span className="tabular-nums text-[#7f93aa]">{aspects.pageCount}</span>
+              </span>
+              <input
+                type="range"
+                min={48}
+                max={900}
+                step={2}
+                value={aspects.pageCount}
+                onChange={(e) => applyAspects({ pageCount: Number(e.target.value) })}
+                className="mt-1 w-full accent-[#e8eef5]"
+              />
+            </label>
+
+            <div className="mt-4">
+              <p className="text-[11px] text-[#9db0c6]">Cloth colour</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {CLOTH_SWATCHES.map((sw) => (
+                  <button
+                    key={sw}
+                    aria-label={`Cloth ${sw}`}
+                    onClick={() => applyAspects({ clothColor: sw })}
+                    style={{ background: sw }}
+                    className={`h-7 w-7 rounded-full border transition-transform ${
+                      aspects.clothColor === sw
+                        ? "scale-110 border-[#e8eef5]"
+                        : "border-white/15 hover:scale-105"
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => applyAspects({})}
+              className={`${chipClass} mt-4 flex items-center gap-1`}
+            >
+              <RotateCcw size={11} /> Reset to suggestion
+            </button>
+          </div>
+
+          {/* -------- fine control -------- */}
+          {GROUPS.map((group) => (
+            <div key={group.title} className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">{group.title}</p>
+              <div className="mt-3 space-y-3">
+                {group.fields.map(([field, label, min, max, step, digits]) => (
+                  <label key={field} className="block">
+                    <span className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                      {label}
+                      <span className="tabular-nums text-[#7f93aa]">
+                        {(config[field] as number).toFixed(digits ?? 2)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={min}
+                      max={max}
+                      step={step}
+                      value={config[field] as number}
+                      onChange={(e) =>
+                        patchConfig({ [field]: Number(e.target.value) } as Partial<BookConfig>)
+                      }
+                      className="mt-1 w-full accent-[#e8eef5]"
+                    />
+                  </label>
+                ))}
+
+                {group.title === "Light & shadow" && (
+                  <label className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                    Cast shadows
+                    <input
+                      type="checkbox"
+                      checked={config.shadows}
+                      onChange={(e) => patchConfig({ shadows: e.target.checked })}
+                      className="accent-[#e8eef5]"
+                    />
+                  </label>
+                )}
+              </div>
+            </div>
+          ))}
+
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">Colour</p>
+            <div className="mt-3 space-y-2">
+              {COLOR_FIELDS.map(([field, label]) => (
+                <label key={field} className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                  {label}
+                  <input
+                    type="color"
+                    value={config[field] as string}
+                    onChange={(e) =>
+                      patchConfig({ [field]: e.target.value } as Partial<BookConfig>)
+                    }
+                    className="h-7 w-12 cursor-pointer rounded border border-white/10 bg-transparent"
+                  />
+                </label>
+              ))}
+              <label className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                Head hairline
+                <input
+                  type="checkbox"
+                  checked={config.headband}
+                  onChange={(e) => patchConfig({ headband: e.target.checked })}
+                  className="accent-[#e8eef5]"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editing && (
-        <div className="pointer-events-auto absolute inset-y-0 right-0 z-20 w-full max-w-sm overflow-y-auto border-l border-white/10 bg-[#0e1319]/95 p-6 backdrop-blur-xl">
+        <div className={panelClass}>
           <div className="flex items-start justify-between">
             <div>
               <p className="text-[10px] tracking-[0.3em] text-[#7f93aa] uppercase">Artwork</p>
@@ -276,10 +572,7 @@ export default function BookScene() {
                 />
               </label>
               {pages.length > 0 && (
-                <button
-                  onClick={clearPdf}
-                  className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
-                >
+                <button onClick={clearPdf} className={chipClass}>
                   Remove
                 </button>
               )}
@@ -300,22 +593,22 @@ export default function BookScene() {
           </div>
 
           <div className="mt-3 space-y-3">
-            {SLOTS.map(({ key, label, hint }) => {
-              const adj = { ...DEFAULT_ADJUST, ...adjusts[key] };
-              const open = openSlot === key;
+            {SLOTS.map(({ key: slot, label, hint }) => {
+              const adj = { ...DEFAULT_ADJUST, ...adjusts[slot] };
+              const open = openSlot === slot;
               return (
-                <div key={key} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div key={slot} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                   <button
-                    onClick={() => setOpenSlot(key)}
+                    onClick={() => setOpenSlot(slot)}
                     className="flex w-full items-center justify-between gap-3 text-left"
                   >
                     <div>
                       <p className="text-sm text-[#e8eef5]">{label}</p>
                       <p className="mt-0.5 text-[11px] text-[#7f93aa]">{hint}</p>
                     </div>
-                    {images[key] && (
+                    {images[slot] && (
                       <img
-                        src={images[key]}
+                        src={images[slot]}
                         alt={`${label} preview`}
                         className="h-12 w-9 rounded object-cover"
                       />
@@ -324,32 +617,29 @@ export default function BookScene() {
 
                   <div className="mt-3 flex items-center gap-2">
                     <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
-                      {images[key] ? "Replace" : "Upload"}
+                      {images[slot] ? "Replace" : "Upload"}
                       <input
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={(e) => setImage(key, e.target.files?.[0])}
+                        onChange={(e) => setImage(slot, e.target.files?.[0])}
                       />
                     </label>
-                    {images[key] && (
-                      <button
-                        onClick={() => clearImage(key)}
-                        className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
-                      >
+                    {images[slot] && (
+                      <button onClick={() => clearImage(slot)} className={chipClass}>
                         Remove
                       </button>
                     )}
                   </div>
 
-                  {images[key] && open && (
+                  {images[slot] && open && (
                     <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                       <div className="flex items-center justify-between">
                         <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">
                           Crop &amp; fit
                         </p>
                         <button
-                          onClick={() => patchAdjust(key, { ...DEFAULT_ADJUST })}
+                          onClick={() => patchAdjust(slot, { ...DEFAULT_ADJUST })}
                           className="flex items-center gap-1 text-[10px] tracking-[0.14em] text-[#9db0c6] uppercase hover:text-[#e8eef5]"
                         >
                           <RotateCcw size={11} /> Reset
@@ -360,7 +650,7 @@ export default function BookScene() {
                         {(["cover", "contain"] as const).map((f) => (
                           <button
                             key={f}
-                            onClick={() => patchAdjust(key, { fit: f })}
+                            onClick={() => patchAdjust(slot, { fit: f })}
                             className={`flex-1 rounded-full px-2 py-1 text-[10px] tracking-[0.14em] uppercase transition-colors ${
                               adj.fit === f
                                 ? "bg-[#e8eef5] text-[#101720]"
@@ -394,7 +684,7 @@ export default function BookScene() {
                             step={step}
                             value={adj[field] as number}
                             onChange={(e) =>
-                              patchAdjust(key, { [field]: Number(e.target.value) } as Partial<ImageAdjust>)
+                              patchAdjust(slot, { [field]: Number(e.target.value) } as Partial<ImageAdjust>)
                             }
                             className="mt-1 w-full accent-[#e8eef5]"
                           />
