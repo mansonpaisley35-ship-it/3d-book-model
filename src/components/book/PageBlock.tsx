@@ -58,6 +58,7 @@ export function PageBlock({
   height,
   thickness,
   pages,
+  paperColor = "#f6f1e4",
   fillGeometry,
   fillMaterials,
 }: {
@@ -65,12 +66,13 @@ export function PageBlock({
   height: number;
   thickness: number;
   pages: PdfPage[];
+  paperColor?: string;
   fillGeometry: THREE.BufferGeometry;
   fillMaterials: THREE.Material[];
 }) {
   const paper = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: "#f6f1e4", roughness: 0.95, metalness: 0 }),
-    [],
+    () => new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.95, metalness: 0 }),
+    [paperColor],
   );
 
   const leafCount = Math.max(1, Math.ceil(pages.length / 2));
