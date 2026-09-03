@@ -98,7 +98,6 @@ const COLOR_FIELDS: [keyof BookConfig, string][] = [
   ["spineColor", "Spine"],
   ["pageColor", "Paper"],
   ["edgeColor", "Page edges"],
-  ["headbandColor", "Head hairline"],
 ];
 
 function CameraRig({ view, active, dist }: { view: ViewKey; active: boolean; dist: number }) {
@@ -520,16 +519,7 @@ export default function BookScene() {
                     className="h-7 w-12 cursor-pointer rounded border border-white/10 bg-transparent"
                   />
                 </label>
-              ))}
-              <label className="flex items-center justify-between text-[11px] text-[#9db0c6]">
-                Head hairline
-                <input
-                  type="checkbox"
-                  checked={config.headband}
-                  onChange={(e) => patchConfig({ headband: e.target.checked })}
-                  className="accent-[#e8eef5]"
-                />
-              </label>
+                ))}
             </div>
           </div>
         </div>
