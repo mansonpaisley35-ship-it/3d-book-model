@@ -363,7 +363,18 @@ export function Book({
 
   return (
     <group ref={group}>
-      <mesh geometry={caseGeo} material={clothMaterial} castShadow receiveShadow />
+      {/* front board */}
+      <mesh geometry={boardGeo} material={boardMaterial} castShadow receiveShadow />
+      {/* back board — same plate, flipped, so its joint groove matches the front */}
+      <mesh
+        geometry={boardGeo}
+        material={boardMaterial}
+        rotation={[Math.PI, 0, 0]}
+        castShadow
+        receiveShadow
+      />
+      {/* spine / edge bridge */}
+      <mesh geometry={spineGeo} material={spineMaterial} castShadow receiveShadow />
 
       {/* text block, inset by the page margins. With a PDF imported it becomes
        * a stack of real leaves, each hinged at the spine. */}
