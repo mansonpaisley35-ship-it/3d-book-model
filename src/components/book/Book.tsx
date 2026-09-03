@@ -248,8 +248,16 @@ export function Book({
   const c = config;
   const m = useMemo(() => metrics(c), [c]);
 
-  const caseGeo = useMemo(() => buildCaseGeometry(c), [c]);
-  useEffect(() => () => caseGeo.dispose(), [caseGeo]);
+  const boardGeo = useMemo(() => buildBoardGeometry(c), [c]);
+  const spineGeo = useMemo(() => buildSpineGeometry(c), [c]);
+  useEffect(
+    () => () => {
+      boardGeo.dispose();
+      spineGeo.dispose();
+    },
+    [boardGeo, spineGeo],
+  );
+
 
   const pageGeo = useMemo(
     () => new THREE.BoxGeometry(m.pw, m.ph, m.pt, 1, 1, 1),
