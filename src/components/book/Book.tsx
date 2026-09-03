@@ -283,23 +283,32 @@ export function Book({
     return { clothNormal, clothRough, pageEdge, quill };
   }, []);
 
-  const clothMaterial = useMemo(
-    () =>
-      new THREE.MeshPhysicalMaterial({
-        vertexColors: true,
-        roughness: c.clothRoughness,
-        roughnessMap: maps.clothRough,
-        metalness: 0,
-        normalMap: maps.clothNormal,
-        normalScale: new THREE.Vector2(0.5, 0.5),
-        sheen: c.clothSheen,
-        sheenRoughness: 0.85,
-        sheenColor: new THREE.Color("#7d93ad"),
-        clearcoat: 0.04,
-        clearcoatRoughness: 0.7,
-      }),
-    [maps, c.clothRoughness, c.clothSheen],
+  const makeCloth = (color: string) =>
+    new THREE.MeshPhysicalMaterial({
+      color,
+      roughness: c.clothRoughness,
+      roughnessMap: maps.clothRough,
+      metalness: 0,
+      normalMap: maps.clothNormal,
+      normalScale: new THREE.Vector2(0.5, 0.5),
+      sheen: c.clothSheen,
+      sheenRoughness: 0.85,
+      sheenColor: new THREE.Color("#7d93ad"),
+      clearcoat: 0.04,
+      clearcoatRoughness: 0.7,
+    });
+
+  const boardMaterial = useMemo(
+    () => makeCloth(c.clothColor),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [maps, c.clothRoughness, c.clothSheen, c.clothColor],
   );
+  const spineMaterial = useMemo(
+    () => makeCloth(c.spineColor),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [maps, c.clothRoughness, c.clothSheen, c.spineColor],
+  );
+
 
   const pageSideMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: c.pageColor, roughness: 0.95 }),
