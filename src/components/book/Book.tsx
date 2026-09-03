@@ -108,9 +108,9 @@ function extrude(shape: THREE.Shape, c: BookConfig) {
  * One board (front or back) as its own mesh, like the reference model: a flat
  * plate with a rounded fore-edge and a single narrow, shallow joint groove
  * pressed into its outer face just past the spine. The back board is the same
- * geometry mirrored, so both sides carry the groove.
+ * mesh rotated 180 degrees about X, so both sides carry the groove.
  */
-function buildBoardGeometry(c: BookConfig, side: 1 | -1) {
+function buildBoardGeometry(c: BookConfig) {
   const { W, T, hingeX, hingeW } = metrics(c);
   const BOARD = c.boardThickness;
   const D = Math.min(c.grooveDepth, BOARD * 0.7);
@@ -133,16 +133,10 @@ function buildBoardGeometry(c: BookConfig, side: 1 | -1) {
   s.lineTo(W / 2, out - R);
   s.quadraticCurveTo(W / 2, out, W / 2 - R, out);
 
-  const geo = extrude(s, c);
-  if (side === -1) {
-    geo.scale(1, 1, -1);
-    geo.scale(-1, 1, 1); // two reflections keep the winding intact
-    geo.translate(0, 0, 0);
-    geo.rotateY(Math.PI); // net effect: mirrored across z, faces still outward
-  }
-  geo.computeVertexNormals();
-  return geo;
+  return extrude(s, c);
 }
+
+
 
 /**
  * The spine / edge bridge: a rounded cloth shell arcing from the front joint
