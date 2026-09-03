@@ -27,8 +27,6 @@ export type BookConfig = {
   spineColor: string;
   pageColor: string;
   edgeColor: string;
-  headband: boolean;
-  headbandColor: string;
 
   /* ---- material ---- */
   clothRoughness: number;
@@ -107,8 +105,6 @@ export function suggestConfig(a: Aspects): BookConfig {
     spineColor: a.clothColor,
     pageColor: "#f6f1e4",
     edgeColor: "#efe7d8",
-    headband: true,
-    headbandColor: "#8a3b35",
 
     clothRoughness: 0.74,
     clothSheen: 0.45,

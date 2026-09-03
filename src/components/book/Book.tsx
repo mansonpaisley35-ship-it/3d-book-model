@@ -389,18 +389,6 @@ export function Book({
           fillMaterials={pageMaterials}
         />
       </group>
-
-      {/* head-edge hairline (hidden once a custom edge image is supplied) */}
-      {c.headband && !edgeTex && (
-        <mesh
-          position={[m.pageCX, m.pageCY + m.ph / 2 + 0.001, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <planeGeometry args={[m.pw * 0.99, m.pt * 0.028]} />
-          <meshStandardMaterial color={c.headbandColor} roughness={0.85} />
-        </mesh>
-      )}
-
       {/* front cover artwork — stops short of the joint groove */}
       {frontTex && (
         <mesh position={[m.panelCX, 0, m.T / 2 + 0.004]}>
