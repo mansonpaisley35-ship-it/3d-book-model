@@ -93,10 +93,11 @@ export function suggestConfig(a: Aspects): BookConfig {
     cornerRadius: Math.min(0.075, trim.width * 0.016),
     edgeRound: Math.min(0.05, caseT * 0.035),
 
-    grooveWidth: +(caseT * 0.14).toFixed(3),
-    grooveDepth: +Math.min(boardThickness * 0.62, caseT * 0.05).toFixed(3),
-    grooveOffset: +(trim.width * 0.042 + caseT * 0.075).toFixed(3),
+    grooveWidth: +(trim.width * 0.014 + caseT * 0.02).toFixed(3),
+    grooveDepth: +Math.min(boardThickness * 0.55, trim.width * 0.007).toFixed(3),
+    grooveOffset: +(trim.width * 0.028 + caseT * 0.06).toFixed(3),
     spineBuckle: +(caseT * 0.055).toFixed(3),
+
 
     marginTop: +(trim.height * 0.016).toFixed(3),
     marginBottom: +(trim.height * 0.016).toFixed(3),

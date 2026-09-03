@@ -56,9 +56,10 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
   {
     title: "Joint & spine",
     fields: [
-      ["grooveOffset", "Groove position", 0.06, 0.55, 0.005, 3],
-      ["grooveWidth", "Groove width", 0.03, 0.3, 0.005, 3],
-      ["grooveDepth", "Groove depth", 0.005, 0.12, 0.002, 3],
+      ["grooveOffset", "Groove position", 0.04, 0.55, 0.002, 3],
+      ["grooveWidth", "Groove width", 0.006, 0.2, 0.002, 3],
+      ["grooveDepth", "Groove depth", 0.002, 0.1, 0.001, 3],
+
       ["spineBuckle", "Spine buckle", 0, 0.2, 0.005, 3],
     ],
   },
