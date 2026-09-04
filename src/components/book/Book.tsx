@@ -121,35 +121,43 @@ function bump(u: number) {
   return a * a * a * (a * (a * 6 - 15) + 10);
 }
 
-function buildBoardGeometry(c: BookConfig) {
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/**
+ * The single shared joint contract used by BOTH the boards and the spine, so
+ * they always meet at the same point with the same (flat) tangent whatever the
+ * configuration is: `jointX` is the outer rim of the groove valley, where the
+ * cover surface is once again perfectly flat at y = ±T/2.
+ */
+function joint(c: BookConfig) {
   const { W, T, hingeX, hingeW } = metrics(c);
+  const half = hingeW * (1 + clamp01(c.grooveBlend));
+  const jointX = hingeX - half;
+  // tiny overlap so no hairline can show through the tangent seam
+  const overlap = Math.min(0.005, half * 0.3);
+  return { W, T, half, jointX, overlap, hingeX };
+}
+
+function buildBoardGeometry(c: BookConfig) {
+  const { W, T, half, jointX, overlap, hingeX } = joint(c);
   const BOARD = c.boardThickness;
   const D = Math.min(c.grooveDepth, BOARD * 0.7);
   const R = Math.min(c.cornerRadius, BOARD * 0.45);
   const out = T / 2; // outer face
   const inn = T / 2 - BOARD; // inner face (against the text block)
-  const tip = hingeX - hingeW; // spine-side end of the board
-  const lip = out - D * 0.2; // where the board meets the spine cloth
+  const tip = jointX - overlap; // spine-side end of the board, past the groove rim
 
   // Analytic groove: a C2 valley, so the flat cover flows into it and out of
   // it again with matching tangents instead of showing two faceted quads.
-  const half = hingeW * (1 + Math.min(1, Math.max(0, c.grooveBlend)));
   const grooveY = (x: number) => out - D * bump((x - hingeX) / half);
 
   const s = new THREE.Shape();
   const x0 = W / 2 - R;
-  const steps = 96;
+  const steps = 160;
   s.moveTo(x0, out);
   for (let i = 1; i <= steps; i++) {
     const x = x0 + ((tip - x0) * i) / steps;
-    let y = grooveY(x);
-    if (x < hingeX) {
-      // ease the spine-side end up into the lip, tangent to the spine shell
-      const t = Math.min(1, (hingeX - x) / Math.max(1e-5, hingeX - tip));
-      const e = t * t * (3 - 2 * t);
-      y = y * (1 - e) + lip * e;
-    }
-    s.lineTo(x, y);
+    s.lineTo(x, grooveY(x));
   }
   // spine-side end cap
   s.lineTo(tip, inn);
@@ -165,45 +173,50 @@ function buildBoardGeometry(c: BookConfig) {
 }
 
 /**
- * The spine / edge bridge: a rounded cloth shell arcing from the front joint
- * to the back joint, with its own inner lining offset by the board thickness.
- * It is a separate mesh, so it can carry its own colour and artwork.
+ * The spine / edge bridge: a superellipse shell arcing from the front joint to
+ * the back joint. The profile is written as X(Y) of a superellipse whose tips
+ * land exactly on the board's outer plane with a HORIZONTAL tangent, and whose
+ * crown is vertical — so the shell melts into both boards for any squareness,
+ * buckle or groove setting.
  */
 function buildSpineGeometry(c: BookConfig) {
-  const { W, T, hingeX, hingeW } = metrics(c);
+  const { T, jointX } = joint(c);
   const BOARD = c.boardThickness;
-  const D = Math.min(c.grooveDepth, BOARD * 0.7);
   const buckle = c.spineBuckle;
-  const tipX = hingeX - hingeW * 0.2; // tucks slightly under the groove
-  const tipY = T / 2 - D * 0.35;
-  const crown = -W / 2 - buckle;
+  const crown = -c.width / 2 - buckle;
 
-  // Superellipse profile: the exponent goes from a soft round back to a flat,
-  // square back with tight corners as `spineSquareness` rises.
-  const q = Math.min(1, Math.max(0, c.spineSquareness));
-  const p = 2 + q * q * 12;
-  const outerX = (y: number) => crown + (tipX - crown) * Math.pow(Math.abs(y) / tipY, p);
-  const innerTip = tipY - BOARD;
-  const innerCrown = crown + BOARD * 1.15;
-  const innerX = (y: number) =>
-    innerCrown + (tipX - innerCrown) * Math.pow(Math.abs(y) / Math.max(1e-5, innerTip), p);
+  const q = clamp01(c.spineSquareness);
+  const m = 2 + q * q * 12; // 2 = round back, high = square back
 
-  const N = 128;
+  const b = T / 2;
+  const a = Math.max(1e-4, jointX - crown);
+  const bIn = Math.max(1e-4, b - BOARD);
+  const aIn = Math.max(1e-4, jointX - (crown + BOARD));
+
+  // X(Y) with (1 - X)^m + Y^m = 1: tangent is flat at the tip, vertical at the crown.
+  const prof = (y: number, aa: number, bb: number, x0: number) => {
+    const Y = Math.min(1, Math.abs(y) / bb);
+    const X = 1 - Math.pow(Math.max(0, 1 - Math.pow(Y, m)), 1 / m);
+    return x0 + aa * X;
+  };
+
+  const N = 192;
   const s = new THREE.Shape();
-  s.moveTo(tipX, tipY);
+  s.moveTo(jointX, b);
   for (let i = 1; i <= N; i++) {
-    const y = tipY - (2 * tipY * i) / N;
-    s.lineTo(outerX(y), y);
+    const y = b - (2 * b * i) / N;
+    s.lineTo(prof(y, a, b, crown), y);
   }
-  s.lineTo(tipX, -innerTip);
+  s.lineTo(jointX, -bIn);
   for (let i = 1; i <= N; i++) {
-    const y = -innerTip + (2 * innerTip * i) / N;
-    s.lineTo(innerX(y), y);
+    const y = -bIn + (2 * bIn * i) / N;
+    s.lineTo(prof(y, aIn, bIn, crown + BOARD), y);
   }
-  s.lineTo(tipX, tipY);
+  s.lineTo(jointX, b);
 
   return extrude(s, c);
 }
+
 
 /**
  * Fit + crop an image into a surface of the given aspect via the texture's
