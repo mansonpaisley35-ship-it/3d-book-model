@@ -55,9 +55,13 @@ function metrics(c: BookConfig) {
   const panelCX = (panelX0 + panelX1) / 2;
   const panelH = Math.max(0.2, H - c.edgeRound * 2.4);
 
-  // text block, inset by the page margins
+  // text block, inset by the page margins. `spineHollow` slides the spine-side
+  // edge of the block between the inner face of the spine shell (0, no cavity)
+  // and just past the joint groove (1, a classic hollow back).
   const pageForeX = W / 2 - c.marginFore;
-  const pageSpineX = hingeX + hingeW * 0.5;
+  const spineInnerX = -W / 2 - c.spineBuckle + c.boardThickness * 1.15;
+  const hollow = Math.min(1, Math.max(0, c.spineHollow));
+  const pageSpineX = spineInnerX + (hingeX + hingeW * 0.5 - spineInnerX) * hollow;
   const pw = Math.max(0.3, pageForeX - pageSpineX);
   const ph = Math.max(0.3, H - c.marginTop - c.marginBottom);
   const pt = Math.max(0.06, c.pageDepth - 0.04);
@@ -71,6 +75,7 @@ function metrics(c: BookConfig) {
     hingeX,
     hingeW,
     spineSurf,
+    spineInnerX,
     panelW,
     panelCX,
     panelH,
@@ -91,12 +96,12 @@ function extrude(shape: THREE.Shape, c: BookConfig) {
   const depth = c.height - ER * 2;
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
-    curveSegments: 64,
+    curveSegments: 96,
     bevelEnabled: true,
     bevelThickness: ER,
     bevelSize: ER * 0.85,
     bevelOffset: -ER * 0.85,
-    bevelSegments: 5,
+    bevelSegments: 12,
   });
   geo.rotateX(Math.PI / 2); // extrusion axis becomes the book's height
   geo.translate(0, depth / 2, 0);
@@ -110,6 +115,12 @@ function extrude(shape: THREE.Shape, c: BookConfig) {
  * pressed into its outer face just past the spine. The back board is the same
  * mesh rotated 180 degrees about X, so both sides carry the groove.
  */
+/** Quintic smootherstep valley: 1 at the centre, 0 with zero slope at the rim. */
+function bump(u: number) {
+  const a = 1 - Math.min(1, Math.abs(u));
+  return a * a * a * (a * (a * 6 - 15) + 10);
+}
+
 function buildBoardGeometry(c: BookConfig) {
   const { W, T, hingeX, hingeW } = metrics(c);
   const BOARD = c.boardThickness;
@@ -120,23 +131,38 @@ function buildBoardGeometry(c: BookConfig) {
   const tip = hingeX - hingeW; // spine-side end of the board
   const lip = out - D * 0.2; // where the board meets the spine cloth
 
+  // Analytic groove: a C2 valley, so the flat cover flows into it and out of
+  // it again with matching tangents instead of showing two faceted quads.
+  const half = hingeW * (1 + Math.min(1, Math.max(0, c.grooveBlend)));
+  const grooveY = (x: number) => out - D * bump((x - hingeX) / half);
+
   const s = new THREE.Shape();
-  // outer face: fore-edge -> groove -> spine-side tip
-  s.moveTo(W / 2 - R, out);
-  s.lineTo(hingeX + hingeW, out);
-  s.quadraticCurveTo(hingeX + hingeW * 0.4, out, hingeX, out - D);
-  s.quadraticCurveTo(hingeX - hingeW * 0.4, out - D, tip, lip);
+  const x0 = W / 2 - R;
+  const steps = 96;
+  s.moveTo(x0, out);
+  for (let i = 1; i <= steps; i++) {
+    const x = x0 + ((tip - x0) * i) / steps;
+    let y = grooveY(x);
+    if (x < hingeX) {
+      // ease the spine-side end up into the lip, tangent to the spine shell
+      const t = Math.min(1, (hingeX - x) / Math.max(1e-5, hingeX - tip));
+      const e = t * t * (3 - 2 * t);
+      y = y * (1 - e) + lip * e;
+    }
+    s.lineTo(x, y);
+  }
   // spine-side end cap
   s.lineTo(tip, inn);
   // inner face back to the fore-edge, with the rounded corner
   s.lineTo(W / 2, inn);
   s.lineTo(W / 2, out - R);
-  s.quadraticCurveTo(W / 2, out, W / 2 - R, out);
+  for (let i = 1; i <= 16; i++) {
+    const a = (i / 16) * (Math.PI / 2);
+    s.lineTo(W / 2 - R * (1 - Math.cos(a)), out - R + R * Math.sin(a));
+  }
 
   return extrude(s, c);
 }
-
-
 
 /**
  * The spine / edge bridge: a rounded cloth shell arcing from the front joint
@@ -152,23 +178,32 @@ function buildSpineGeometry(c: BookConfig) {
   const tipY = T / 2 - D * 0.35;
   const crown = -W / 2 - buckle;
 
+  // Superellipse profile: the exponent goes from a soft round back to a flat,
+  // square back with tight corners as `spineSquareness` rises.
+  const q = Math.min(1, Math.max(0, c.spineSquareness));
+  const p = 2 + q * q * 12;
+  const outerX = (y: number) => crown + (tipX - crown) * Math.pow(Math.abs(y) / tipY, p);
+  const innerTip = tipY - BOARD;
+  const innerCrown = crown + BOARD * 1.15;
+  const innerX = (y: number) =>
+    innerCrown + (tipX - innerCrown) * Math.pow(Math.abs(y) / Math.max(1e-5, innerTip), p);
+
+  const N = 128;
   const s = new THREE.Shape();
   s.moveTo(tipX, tipY);
-  s.bezierCurveTo(crown, T * 0.42, crown, -T * 0.42, tipX, -tipY);
-  s.lineTo(tipX, -tipY + BOARD);
-  s.bezierCurveTo(
-    crown + BOARD * 1.15,
-    -T * 0.36,
-    crown + BOARD * 1.15,
-    T * 0.36,
-    tipX,
-    tipY - BOARD,
-  );
+  for (let i = 1; i <= N; i++) {
+    const y = tipY - (2 * tipY * i) / N;
+    s.lineTo(outerX(y), y);
+  }
+  s.lineTo(tipX, -innerTip);
+  for (let i = 1; i <= N; i++) {
+    const y = -innerTip + (2 * innerTip * i) / N;
+    s.lineTo(innerX(y), y);
+  }
   s.lineTo(tipX, tipY);
 
   return extrude(s, c);
 }
-
 
 /**
  * Fit + crop an image into a surface of the given aspect via the texture's
