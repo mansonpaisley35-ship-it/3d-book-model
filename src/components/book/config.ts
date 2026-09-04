@@ -16,6 +16,9 @@ export type BookConfig = {
   grooveWidth: number;
   grooveDepth: number;
   spineBuckle: number; // how far the rounded spine bulges past the boards
+  spineSquareness: number; // 0 = fully rounded spine, 1 = flat/square spine
+  spineHollow: number; // 1 = full cavity behind the text block, 0 = pages meet the spine
+  grooveBlend: number; // 0..1, how softly the groove melts into the cover
 
   /* ---- text block ---- */
   marginTop: number;
@@ -95,6 +98,9 @@ export function suggestConfig(a: Aspects): BookConfig {
     grooveDepth: +Math.min(boardThickness * 0.55, trim.width * 0.007).toFixed(3),
     grooveOffset: +(trim.width * 0.028 + caseT * 0.06).toFixed(3),
     spineBuckle: +(caseT * 0.055).toFixed(3),
+    spineSquareness: 0,
+    spineHollow: 1,
+    grooveBlend: 0.65,
 
 
     marginTop: +(trim.height * 0.016).toFixed(3),

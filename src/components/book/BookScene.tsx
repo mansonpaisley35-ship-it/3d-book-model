@@ -60,7 +60,10 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
       ["grooveWidth", "Groove width", 0.006, 0.2, 0.002, 3],
       ["grooveDepth", "Groove depth", 0.002, 0.1, 0.001, 3],
 
+      ["grooveBlend", "Groove softness", 0, 1, 0.02],
       ["spineBuckle", "Spine buckle", 0, 0.2, 0.005, 3],
+      ["spineSquareness", "Square spine", 0, 1, 0.02],
+      ["spineHollow", "Space behind pages", 0, 1, 0.02],
     ],
   },
   {
