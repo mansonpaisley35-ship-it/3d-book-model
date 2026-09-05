@@ -146,6 +146,21 @@ export default function BookScene() {
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
   const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
+  const [copied, setCopied] = useState(false);
+
+  /** Re-open a previously saved design file. */
+  const loadDesign = async (file?: File | null) => {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text()) as { aspects?: Aspects; config?: BookConfig };
+      if (data.aspects) setAspects(data.aspects);
+      if (data.config) setConfig((prev) => ({ ...prev, ...data.config }));
+    } catch (err) {
+      console.error("Could not read that design file", err);
+    }
+  };
+
+
 
   /** Change one of the high-level aspects and re-derive the suggested build. */
   const applyAspects = (patch: Partial<Aspects>) => {
