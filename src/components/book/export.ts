@@ -157,9 +157,8 @@ export function buildSpineGeometry(THREE, c) {
 /** The text block as one solid slab (swap for real leaves when animating). */
 export function buildTextBlockGeometry(THREE, c) {
   const m = metrics(c);
-  const geo = new THREE.BoxGeometry(m.pageWidth, m.pageHeight, m.pageDepth);
-  geo.rotateY(Math.PI / 2);
-  return geo;
+  // width -> X, height -> Y, thickness -> Z (same axes the boards end up on)
+  return new THREE.BoxGeometry(m.pageWidth, m.pageHeight, m.pageDepth);
 }
 
 /**
