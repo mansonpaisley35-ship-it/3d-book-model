@@ -2,7 +2,20 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Feather, FileText, Loader2, RotateCcw, Ruler, Sparkles, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  Feather,
+  FileText,
+  Loader2,
+  RotateCcw,
+  Ruler,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
+import { designFiles, designJson, downloadFile } from "./export";
 import {
   Book,
   DEFAULT_ADJUST,
