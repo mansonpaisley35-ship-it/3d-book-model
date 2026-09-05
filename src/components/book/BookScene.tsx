@@ -2,7 +2,20 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Feather, FileText, Loader2, RotateCcw, Ruler, Sparkles, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  Feather,
+  FileText,
+  Loader2,
+  RotateCcw,
+  Ruler,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
+import { designFiles, designJson, downloadFile } from "./export";
 import {
   Book,
   DEFAULT_ADJUST,
@@ -133,6 +146,21 @@ export default function BookScene() {
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
   const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
+  const [copied, setCopied] = useState(false);
+
+  /** Re-open a previously saved design file. */
+  const loadDesign = async (file?: File | null) => {
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text()) as { aspects?: Aspects; config?: BookConfig };
+      if (data.aspects) setAspects(data.aspects);
+      if (data.config) setConfig((prev) => ({ ...prev, ...data.config }));
+    } catch (err) {
+      console.error("Could not read that design file", err);
+    }
+  };
+
+
 
   /** Change one of the high-level aspects and re-derive the suggested build. */
   const applyAspects = (patch: Partial<Aspects>) => {
@@ -525,6 +553,65 @@ export default function BookScene() {
                 ))}
             </div>
           </div>
+
+          {/* -------- save / reuse the design -------- */}
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">Save design</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-[#7f93aa]">
+              Exports the build only — sizes, joint, spine, colours and light. Artwork and imported
+              pages are not included.
+            </p>
+
+            <div className="mt-3 space-y-2">
+              {designFiles(config, aspects).map((file) => (
+                <button
+                  key={file.name}
+                  onClick={() => downloadFile(file)}
+                  className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-[#131a22] px-3 py-2 text-left text-[12px] text-[#e8eef5] hover:border-white/25"
+                >
+                  <span>
+                    {file.name.endsWith(".json")
+                      ? "Design data (.json)"
+                      : file.name.endsWith(".js")
+                        ? "Three.js module (.js)"
+                        : "Standalone page (.html)"}
+                    <span className="mt-0.5 block text-[10px] text-[#7f93aa]">
+                      {file.name.endsWith(".json")
+                        ? "Every setting as plain data"
+                        : file.name.endsWith(".js")
+                          ? "Config + geometry builders to import"
+                          : "Opens in any browser, orbit the book"}
+                    </span>
+                  </span>
+                  <Download size={14} className="shrink-0 text-[#7f93aa]" />
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={async () => {
+                  await navigator.clipboard.writeText(designJson(config, aspects));
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1600);
+                }}
+                className={`${chipClass} flex items-center gap-1`}
+              >
+                {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? "Copied" : "Copy JSON"}
+              </button>
+
+              <label className={`${chipClass} flex cursor-pointer items-center gap-1`}>
+                <Upload size={11} /> Load JSON
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => loadDesign(e.target.files?.[0])}
+                />
+              </label>
+            </div>
+          </div>
+
         </div>
       )}
 
