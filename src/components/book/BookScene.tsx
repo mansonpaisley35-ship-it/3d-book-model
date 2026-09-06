@@ -52,68 +52,212 @@ const SLOTS: { key: keyof BookImages; label: string; hint: string }[] = [
   { key: "edges", label: "Page edges", hint: "Wraps fore-edge, head & tail" },
 ];
 
-type NumField = [keyof BookConfig, string, number, number, number, number?];
+type NumField = {
+  key: keyof BookConfig;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  digits?: number;
+  /** short help text shown on the information icon */
+  tip?: string;
+  /** the visual direction of the slider, e.g. Rounded -> Flat */
+  ends?: [string, string];
+};
 
+/** Panel groups follow the physical construction of a case-bound book. */
 const GROUPS: { title: string; fields: NumField[] }[] = [
   {
-    title: "Dimensions",
+    title: "Book",
     fields: [
-      ["width", "Width", 2, 6, 0.01],
-      ["height", "Height", 3, 8, 0.01],
-      ["pageDepth", "Depth of text block", 0.2, 2.6, 0.01],
-      ["boardThickness", "Cover thickness", 0.03, 0.2, 0.005, 3],
-      ["cornerRadius", "Corner radius", 0, 0.14, 0.005, 3],
-      ["edgeRound", "Head/tail rounding", 0.005, 0.09, 0.005, 3],
+      { key: "bookWidth", label: "Book width", min: 2, max: 6, step: 0.01 },
+      { key: "bookHeight", label: "Book height", min: 3, max: 8, step: 0.01 },
+      {
+        key: "pageBlockThickness",
+        label: "Page block thickness",
+        min: 0.2,
+        max: 2.6,
+        step: 0.01,
+        tip: "Thickness of the bound page block. Page count and paper stock suggest a starting value.",
+      },
+      {
+        key: "boardThickness",
+        label: "Board thickness",
+        min: 0.03,
+        max: 0.2,
+        step: 0.005,
+        digits: 3,
+        tip: "Thickness of the rigid board beneath the covering material.",
+      },
+      {
+        key: "coverOverhang",
+        label: "Cover overhang",
+        min: 0,
+        max: 0.25,
+        step: 0.005,
+        digits: 3,
+        tip: "How far the boards project past the page block at head, tail and fore-edge.",
+      },
     ],
   },
   {
-    title: "Joint & spine",
+    title: "Cover shape",
     fields: [
-      ["grooveOffset", "Groove position", 0.04, 0.55, 0.002, 3],
-      ["grooveWidth", "Groove width", 0.006, 0.2, 0.002, 3],
-      ["grooveDepth", "Groove depth", 0.002, 0.1, 0.001, 3],
-
-      ["grooveBlend", "Groove softness", 0, 1, 0.02],
-      ["spineBuckle", "Spine buckle", 0, 0.2, 0.005, 3],
-      ["spineSquareness", "Square spine", 0, 1, 0.02],
-      ["spineHollow", "Space behind pages", 0, 1, 0.02],
+      {
+        key: "coverCornerRadius",
+        label: "Cover corner radius",
+        min: 0,
+        max: 0.14,
+        step: 0.005,
+        digits: 3,
+      },
+      {
+        key: "headTailEdgeRadius",
+        label: "Head & tail edge radius",
+        min: 0.005,
+        max: 0.09,
+        step: 0.005,
+        digits: 3,
+        tip: "Radius of the case edges at the head and the tail.",
+      },
     ],
   },
   {
-    title: "Page margins",
+    title: "Spine & joint",
     fields: [
-      ["marginTop", "Top", 0, 0.3, 0.005, 3],
-      ["marginBottom", "Bottom", 0, 0.3, 0.005, 3],
-      ["marginFore", "Fore-edge", 0, 0.3, 0.005, 3],
+      {
+        key: "jointPosition",
+        label: "Joint position",
+        min: 0.04,
+        max: 0.55,
+        step: 0.002,
+        digits: 3,
+        tip: "Distance between the spine centre and the cover joint.",
+      },
+      {
+        key: "jointWidth",
+        label: "Joint width",
+        min: 0.006,
+        max: 0.2,
+        step: 0.002,
+        digits: 3,
+        tip: "Width of the flexible joint between the cover board and spine.",
+      },
+      {
+        key: "jointDepth",
+        label: "Joint depth",
+        min: 0.002,
+        max: 0.1,
+        step: 0.001,
+        digits: 3,
+        tip: "Depth of the recessed hinge groove.",
+      },
+      {
+        key: "jointSoftness",
+        label: "Joint softness",
+        min: 0,
+        max: 1,
+        step: 0.02,
+        tip: "Controls how gently the joint transitions into the cover.",
+        ends: ["Crisp", "Soft"],
+      },
+      {
+        key: "spineExtension",
+        label: "Spine extension",
+        min: 0,
+        max: 0.2,
+        step: 0.005,
+        digits: 3,
+        tip: "How far the spine crown projects outward beyond the cover boards.",
+      },
+      {
+        key: "spineProfileFlatness",
+        label: "Spine profile flatness",
+        min: 0,
+        max: 1,
+        step: 0.02,
+        tip: "Cross-section of the spine, from rounded to flatter and more squared.",
+        ends: ["Rounded", "Flat"],
+      },
+      {
+        key: "hollowBack",
+        label: "Hollow back",
+        min: 0,
+        max: 1,
+        step: 0.02,
+        tip: "Gap between the page block and the inside of the spine.",
+        ends: ["Solid", "Hollow"],
+      },
     ],
   },
   {
-    title: "Material",
+    title: "Page block",
     fields: [
-      ["clothRoughness", "Cloth roughness", 0.2, 1, 0.01],
-      ["clothSheen", "Cloth sheen", 0, 1, 0.01],
+      {
+        key: "pageBlockCornerRadius",
+        label: "Page block corner radius",
+        min: 0,
+        max: 0.3,
+        step: 0.005,
+        digits: 3,
+        tip: "Roundness of the page block's fore-edge corners — separate from the cover boards.",
+      },
+      { key: "headMargin", label: "Head margin", min: -0.1, max: 0.3, step: 0.005, digits: 3 },
+      { key: "tailMargin", label: "Tail margin", min: -0.1, max: 0.3, step: 0.005, digits: 3 },
+      {
+        key: "foreEdgeMargin",
+        label: "Fore-edge margin",
+        min: -0.1,
+        max: 0.3,
+        step: 0.005,
+        digits: 3,
+      },
+      {
+        key: "pageEdgeVariation",
+        label: "Page edge variation",
+        min: 0,
+        max: 1,
+        step: 0.02,
+        tip: "Amount of subtle irregularity between individual page edges.",
+        ends: ["Uniform", "Natural"],
+      },
     ],
   },
   {
-    title: "Light & shadow",
+    title: "Materials",
     fields: [
-      ["ambient", "Ambient", 0, 1.5, 0.01],
-      ["keyIntensity", "Key light", 0, 6, 0.05],
-      ["keyAzimuth", "Key rotation", -180, 180, 1, 0],
-      ["keyElevation", "Key height", 5, 85, 1, 0],
-      ["rimIntensity", "Rim light", 0, 4, 0.05],
-      ["envIntensity", "Studio bounce", 0, 2, 0.02],
-      ["shadowOpacity", "Shadow strength", 0, 1, 0.01],
-      ["shadowBlur", "Shadow softness", 0.5, 6, 0.1],
+      { key: "clothRoughness", label: "Cover roughness", min: 0.2, max: 1, step: 0.01 },
+      { key: "clothSheen", label: "Cover sheen", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    title: "Lighting & presentation",
+    fields: [
+      { key: "ambient", label: "Ambient light", min: 0, max: 1.5, step: 0.01 },
+      { key: "keyIntensity", label: "Key light intensity", min: 0, max: 6, step: 0.05 },
+      {
+        key: "keyAzimuth",
+        label: "Key light angle",
+        min: -180,
+        max: 180,
+        step: 1,
+        digits: 0,
+        tip: "Rotates the key light around the book, in degrees.",
+      },
+      { key: "keyElevation", label: "Key light height", min: 5, max: 85, step: 1, digits: 0 },
+      { key: "rimIntensity", label: "Rim light intensity", min: 0, max: 4, step: 0.05 },
+      { key: "envIntensity", label: "Environment light", min: 0, max: 2, step: 0.02 },
+      { key: "shadowOpacity", label: "Shadow strength", min: 0, max: 1, step: 0.01 },
+      { key: "shadowBlur", label: "Shadow softness", min: 0.5, max: 6, step: 0.1 },
     ],
   },
 ];
 
 const COLOR_FIELDS: [keyof BookConfig, string][] = [
-  ["clothColor", "Boards"],
-  ["spineColor", "Spine"],
-  ["pageColor", "Paper"],
-  ["edgeColor", "Page edges"],
+  ["clothColor", "Cover colour"],
+  ["spineColor", "Spine colour"],
+  ["pageColor", "Paper colour"],
+  ["edgeColor", "Page edge colour"],
 ];
 
 function CameraRig({ view, active, dist }: { view: ViewKey; active: boolean; dist: number }) {
