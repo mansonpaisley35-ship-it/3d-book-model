@@ -167,7 +167,7 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
  */
 function joint(c: BookConfig) {
   const { W, T, hingeX, hingeW } = metrics(c);
-  const half = hingeW * (1 + clamp01(c.grooveBlend));
+  const half = hingeW * (1 + clamp01(c.jointSoftness));
   const jointX = hingeX - half;
   // tiny overlap so no hairline can show through the tangent seam
   const overlap = Math.min(0.005, half * 0.3);
@@ -177,8 +177,8 @@ function joint(c: BookConfig) {
 function buildBoardGeometry(c: BookConfig) {
   const { W, T, half, jointX, overlap, hingeX } = joint(c);
   const BOARD = c.boardThickness;
-  const D = Math.min(c.grooveDepth, BOARD * 0.7);
-  const R = Math.min(c.cornerRadius, BOARD * 0.45);
+  const D = Math.min(c.jointDepth, BOARD * 0.7);
+  const R = Math.min(c.coverCornerRadius, BOARD * 0.45);
   const out = T / 2; // outer face
   const inn = T / 2 - BOARD; // inner face (against the text block)
   const tip = jointX - overlap; // spine-side end of the board, past the groove rim
@@ -218,10 +218,10 @@ function buildBoardGeometry(c: BookConfig) {
 function buildSpineGeometry(c: BookConfig) {
   const { T, jointX } = joint(c);
   const BOARD = c.boardThickness;
-  const buckle = c.spineBuckle;
-  const crown = -c.width / 2 - buckle;
+  const buckle = c.spineExtension;
+  const crown = -c.bookWidth / 2 - buckle;
 
-  const q = clamp01(c.spineSquareness);
+  const q = clamp01(c.spineProfileFlatness);
   const m = 2 + q * q * 12; // 2 = round back, high = square back
 
   const b = T / 2;
