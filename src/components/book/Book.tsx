@@ -42,31 +42,36 @@ export type BookAdjusts = Partial<Record<keyof BookImages, ImageAdjust>>;
 
 /** All derived measurements of the case, computed from the config. */
 function metrics(c: BookConfig) {
-  const W = c.width;
-  const H = c.height;
-  const T = c.pageDepth + c.boardThickness * 2;
-  const hingeX = -W / 2 + c.grooveOffset;
-  const hingeW = c.grooveWidth / 2;
-  const spineSurf = -W / 2 - c.spineBuckle - 0.007;
+  const W = c.bookWidth;
+  const H = c.bookHeight;
+  const T = c.pageBlockThickness + c.boardThickness * 2;
+  const hingeX = -W / 2 + c.jointPosition;
+  const hingeW = c.jointWidth / 2;
+  const spineSurf = -W / 2 - c.spineExtension - 0.007;
 
   const panelX0 = hingeX + hingeW + 0.015;
-  const panelX1 = W / 2 - c.cornerRadius;
+  const panelX1 = W / 2 - c.coverCornerRadius;
   const panelW = Math.max(0.2, panelX1 - panelX0);
   const panelCX = (panelX0 + panelX1) / 2;
-  const panelH = Math.max(0.2, H - c.edgeRound * 2.4);
+  const panelH = Math.max(0.2, H - c.headTailEdgeRadius * 2.4);
 
-  // text block, inset by the page margins. `spineHollow` slides the spine-side
-  // edge of the block between the inner face of the spine shell (0, no cavity)
-  // and just past the joint groove (1, a classic hollow back).
-  const pageForeX = W / 2 - c.marginFore;
-  const spineInnerX = -W / 2 - c.spineBuckle + c.boardThickness * 1.15;
-  const hollow = Math.min(1, Math.max(0, c.spineHollow));
+  // Page block. The boards project past it by `coverOverhang` at the head, tail
+  // and fore-edge; the per-edge margins are a fine trim on top of that.
+  // `hollowBack` slides the spine-side edge of the block between the inner face
+  // of the spine shell (0, no cavity) and just past the joint (1, hollow back).
+  const insetFore = c.coverOverhang + c.foreEdgeMargin;
+  const insetHead = c.coverOverhang + c.headMargin;
+  const insetTail = c.coverOverhang + c.tailMargin;
+
+  const pageForeX = W / 2 - insetFore;
+  const spineInnerX = -W / 2 - c.spineExtension + c.boardThickness * 1.15;
+  const hollow = Math.min(1, Math.max(0, c.hollowBack));
   const pageSpineX = spineInnerX + (hingeX + hingeW * 0.5 - spineInnerX) * hollow;
   const pw = Math.max(0.3, pageForeX - pageSpineX);
-  const ph = Math.max(0.3, H - c.marginTop - c.marginBottom);
-  const pt = Math.max(0.06, c.pageDepth - 0.04);
+  const ph = Math.max(0.3, H - insetHead - insetTail);
+  const pt = Math.max(0.06, c.pageBlockThickness - 0.04);
   const pageCX = (pageForeX + pageSpineX) / 2;
-  const pageCY = (c.marginBottom - c.marginTop) / 2;
+  const pageCY = (insetTail - insetHead) / 2;
 
   return {
     W,
@@ -92,8 +97,8 @@ function metrics(c: BookConfig) {
  * the book's height, with a bevel that rounds the head and the tail.
  */
 function extrude(shape: THREE.Shape, c: BookConfig) {
-  const ER = Math.min(c.edgeRound, c.boardThickness * 0.9, c.height / 20);
-  const depth = c.height - ER * 2;
+  const ER = Math.min(c.headTailEdgeRadius, c.boardThickness * 0.9, c.bookHeight / 20);
+  const depth = c.bookHeight - ER * 2;
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
     curveSegments: 96,
@@ -105,6 +110,37 @@ function extrude(shape: THREE.Shape, c: BookConfig) {
   });
   geo.rotateX(Math.PI / 2); // extrusion axis becomes the book's height
   geo.translate(0, depth / 2, 0);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * The page block: a slab in XY extruded through its thickness, with the fore-
+ * edge corners rounded by `pageBlockCornerRadius` (0 = a crisp cut block).
+ * Material groups keep the same slot order the box geometry used, so the
+ * fore-edge / head / tail can still carry the page-edge map.
+ */
+function buildPageBlockGeometry(w: number, h: number, t: number, radius: number) {
+  const R = Math.max(0, Math.min(radius, w / 2 - 0.01, h / 2 - 0.01));
+  if (R <= 0.0005) return new THREE.BoxGeometry(w, h, t, 1, 1, 1);
+
+  const s = new THREE.Shape();
+  const x1 = w / 2;
+  const y1 = h / 2;
+  s.moveTo(-x1, -y1);
+  s.lineTo(x1 - R, -y1);
+  s.quadraticCurveTo(x1, -y1, x1, -y1 + R);
+  s.lineTo(x1, y1 - R);
+  s.quadraticCurveTo(x1, y1, x1 - R, y1);
+  s.lineTo(-x1, y1);
+  s.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: t,
+    curveSegments: 24,
+    bevelEnabled: false,
+  });
+  geo.translate(0, 0, -t / 2);
   geo.computeVertexNormals();
   return geo;
 }
