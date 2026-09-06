@@ -45,23 +45,58 @@ export function makeClothRoughnessMap(size = 512): THREE.Texture {
   return tex;
 }
 
-/** Page-edge striations: hundreds of hairline leaves seen from the fore-edge. */
-export function makePageEdgeMap(size = 1024): THREE.Texture {
+/**
+ * Page-edge striations: hundreds of hairline leaves seen from the fore-edge.
+ * `texture` picks the character of the cut (smooth -> deckled) and `variation`
+ * (0..1) how irregular individual leaves are.
+ */
+export type PageEdgeStyle = "smooth" | "natural" | "rough" | "deckled";
+
+const EDGE_STYLES: Record<PageEdgeStyle, { contrast: number; every: number; line: number; wave: number }> = {
+  smooth: { contrast: 12, every: 5, line: 0.12, wave: 0 },
+  natural: { contrast: 34, every: 3, line: 0.35, wave: 0 },
+  rough: { contrast: 58, every: 2, line: 0.55, wave: 1.4 },
+  deckled: { contrast: 70, every: 2, line: 0.6, wave: 4.5 },
+};
+
+export function makePageEdgeMap(
+  texture: PageEdgeStyle = "natural",
+  variation = 0,
+  size = 1024,
+): THREE.Texture {
+  const st = EDGE_STYLES[texture];
+  const v = Math.min(1, Math.max(0, variation));
   const c = document.createElement("canvas");
   c.width = size;
-  c.height = 32;
+  c.height = 64;
   const ctx = c.getContext("2d")!;
   ctx.fillStyle = "#efe9dd";
   ctx.fillRect(0, 0, c.width, c.height);
+
+  const contrast = st.contrast * (1 + v * 1.6);
   for (let x = 0; x < size; x += 1) {
-    const v = 214 + Math.random() * 34;
-    ctx.fillStyle = `rgb(${v},${v - 6},${v - 18})`;
+    const v0 = 224 - contrast / 2 + Math.random() * contrast;
+    ctx.fillStyle = `rgb(${v0},${v0 - 6},${v0 - 18})`;
     ctx.fillRect(x, 0, 1, c.height);
-    if (x % 3 === 0) {
-      ctx.fillStyle = "rgba(120,105,84,0.35)";
+    if (x % st.every === 0) {
+      ctx.fillStyle = `rgba(120,105,84,${st.line * (1 + v * 0.6)})`;
       ctx.fillRect(x, 0, 1, c.height);
     }
   }
+
+  // uneven cut: a soft shadow that wanders along the height of the edge
+  const wave = st.wave + v * 8;
+  if (wave > 0.01) {
+    for (let x = 0; x < size; x += 1) {
+      const d =
+        Math.sin(x * 0.09) * 0.5 + Math.sin(x * 0.31 + 1.7) * 0.3 + (Math.random() - 0.5) * 0.4;
+      const h = Math.abs(d) * wave;
+      ctx.fillStyle = "rgba(96,84,64,0.22)";
+      ctx.fillRect(x, 0, 1, h);
+      ctx.fillRect(x, c.height - h, 1, h);
+    }
+  }
+
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;

@@ -42,31 +42,36 @@ export type BookAdjusts = Partial<Record<keyof BookImages, ImageAdjust>>;
 
 /** All derived measurements of the case, computed from the config. */
 function metrics(c: BookConfig) {
-  const W = c.width;
-  const H = c.height;
-  const T = c.pageDepth + c.boardThickness * 2;
-  const hingeX = -W / 2 + c.grooveOffset;
-  const hingeW = c.grooveWidth / 2;
-  const spineSurf = -W / 2 - c.spineBuckle - 0.007;
+  const W = c.bookWidth;
+  const H = c.bookHeight;
+  const T = c.pageBlockThickness + c.boardThickness * 2;
+  const hingeX = -W / 2 + c.jointPosition;
+  const hingeW = c.jointWidth / 2;
+  const spineSurf = -W / 2 - c.spineExtension - 0.007;
 
   const panelX0 = hingeX + hingeW + 0.015;
-  const panelX1 = W / 2 - c.cornerRadius;
+  const panelX1 = W / 2 - c.coverCornerRadius;
   const panelW = Math.max(0.2, panelX1 - panelX0);
   const panelCX = (panelX0 + panelX1) / 2;
-  const panelH = Math.max(0.2, H - c.edgeRound * 2.4);
+  const panelH = Math.max(0.2, H - c.headTailEdgeRadius * 2.4);
 
-  // text block, inset by the page margins. `spineHollow` slides the spine-side
-  // edge of the block between the inner face of the spine shell (0, no cavity)
-  // and just past the joint groove (1, a classic hollow back).
-  const pageForeX = W / 2 - c.marginFore;
-  const spineInnerX = -W / 2 - c.spineBuckle + c.boardThickness * 1.15;
-  const hollow = Math.min(1, Math.max(0, c.spineHollow));
+  // Page block. The boards project past it by `coverOverhang` at the head, tail
+  // and fore-edge; the per-edge margins are a fine trim on top of that.
+  // `hollowBack` slides the spine-side edge of the block between the inner face
+  // of the spine shell (0, no cavity) and just past the joint (1, hollow back).
+  const insetFore = c.coverOverhang + c.foreEdgeMargin;
+  const insetHead = c.coverOverhang + c.headMargin;
+  const insetTail = c.coverOverhang + c.tailMargin;
+
+  const pageForeX = W / 2 - insetFore;
+  const spineInnerX = -W / 2 - c.spineExtension + c.boardThickness * 1.15;
+  const hollow = Math.min(1, Math.max(0, c.hollowBack));
   const pageSpineX = spineInnerX + (hingeX + hingeW * 0.5 - spineInnerX) * hollow;
   const pw = Math.max(0.3, pageForeX - pageSpineX);
-  const ph = Math.max(0.3, H - c.marginTop - c.marginBottom);
-  const pt = Math.max(0.06, c.pageDepth - 0.04);
+  const ph = Math.max(0.3, H - insetHead - insetTail);
+  const pt = Math.max(0.06, c.pageBlockThickness - 0.04);
   const pageCX = (pageForeX + pageSpineX) / 2;
-  const pageCY = (c.marginBottom - c.marginTop) / 2;
+  const pageCY = (insetTail - insetHead) / 2;
 
   return {
     W,
@@ -92,8 +97,8 @@ function metrics(c: BookConfig) {
  * the book's height, with a bevel that rounds the head and the tail.
  */
 function extrude(shape: THREE.Shape, c: BookConfig) {
-  const ER = Math.min(c.edgeRound, c.boardThickness * 0.9, c.height / 20);
-  const depth = c.height - ER * 2;
+  const ER = Math.min(c.headTailEdgeRadius, c.boardThickness * 0.9, c.bookHeight / 20);
+  const depth = c.bookHeight - ER * 2;
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
     curveSegments: 96,
@@ -105,6 +110,37 @@ function extrude(shape: THREE.Shape, c: BookConfig) {
   });
   geo.rotateX(Math.PI / 2); // extrusion axis becomes the book's height
   geo.translate(0, depth / 2, 0);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * The page block: a slab in XY extruded through its thickness, with the fore-
+ * edge corners rounded by `pageBlockCornerRadius` (0 = a crisp cut block).
+ * Material groups keep the same slot order the box geometry used, so the
+ * fore-edge / head / tail can still carry the page-edge map.
+ */
+function buildPageBlockGeometry(w: number, h: number, t: number, radius: number) {
+  const R = Math.max(0, Math.min(radius, w / 2 - 0.01, h / 2 - 0.01));
+  if (R <= 0.0005) return new THREE.BoxGeometry(w, h, t, 1, 1, 1);
+
+  const s = new THREE.Shape();
+  const x1 = w / 2;
+  const y1 = h / 2;
+  s.moveTo(-x1, -y1);
+  s.lineTo(x1 - R, -y1);
+  s.quadraticCurveTo(x1, -y1, x1, -y1 + R);
+  s.lineTo(x1, y1 - R);
+  s.quadraticCurveTo(x1, y1, x1 - R, y1);
+  s.lineTo(-x1, y1);
+  s.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: t,
+    curveSegments: 24,
+    bevelEnabled: false,
+  });
+  geo.translate(0, 0, -t / 2);
   geo.computeVertexNormals();
   return geo;
 }
@@ -131,7 +167,7 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
  */
 function joint(c: BookConfig) {
   const { W, T, hingeX, hingeW } = metrics(c);
-  const half = hingeW * (1 + clamp01(c.grooveBlend));
+  const half = hingeW * (1 + clamp01(c.jointSoftness));
   const jointX = hingeX - half;
   // tiny overlap so no hairline can show through the tangent seam
   const overlap = Math.min(0.005, half * 0.3);
@@ -141,8 +177,8 @@ function joint(c: BookConfig) {
 function buildBoardGeometry(c: BookConfig) {
   const { W, T, half, jointX, overlap, hingeX } = joint(c);
   const BOARD = c.boardThickness;
-  const D = Math.min(c.grooveDepth, BOARD * 0.7);
-  const R = Math.min(c.cornerRadius, BOARD * 0.45);
+  const D = Math.min(c.jointDepth, BOARD * 0.7);
+  const R = Math.min(c.coverCornerRadius, BOARD * 0.45);
   const out = T / 2; // outer face
   const inn = T / 2 - BOARD; // inner face (against the text block)
   const tip = jointX - overlap; // spine-side end of the board, past the groove rim
@@ -182,10 +218,10 @@ function buildBoardGeometry(c: BookConfig) {
 function buildSpineGeometry(c: BookConfig) {
   const { T, jointX } = joint(c);
   const BOARD = c.boardThickness;
-  const buckle = c.spineBuckle;
-  const crown = -c.width / 2 - buckle;
+  const buckle = c.spineExtension;
+  const crown = -c.bookWidth / 2 - buckle;
 
-  const q = clamp01(c.spineSquareness);
+  const q = clamp01(c.spineProfileFlatness);
   const m = 2 + q * q * 12; // 2 = round back, high = square back
 
   const b = T / 2;
@@ -307,9 +343,10 @@ export function Book({
   );
 
 
+  const rounded = c.pageBlockCornerRadius > 0.0005;
   const pageGeo = useMemo(
-    () => new THREE.BoxGeometry(m.pw, m.ph, m.pt, 1, 1, 1),
-    [m.pw, m.ph, m.pt],
+    () => buildPageBlockGeometry(m.pw, m.ph, m.pt, c.pageBlockCornerRadius),
+    [m.pw, m.ph, m.pt, c.pageBlockCornerRadius],
   );
   useEffect(() => () => pageGeo.dispose(), [pageGeo]);
 
@@ -326,10 +363,16 @@ export function Book({
   const maps = useMemo(() => {
     const clothNormal = makeClothNormalMap();
     const clothRough = makeClothRoughnessMap();
-    const pageEdge = makePageEdgeMap();
     const quill = makeStampMap(512, 512, drawQuill);
-    return { clothNormal, clothRough, pageEdge, quill };
+    return { clothNormal, clothRough, quill };
   }, []);
+
+  // striated page edges, re-cut whenever the edge style or variation changes
+  const pageEdgeMap = useMemo(
+    () => makePageEdgeMap(c.pageEdgeTexture, c.pageEdgeVariation),
+    [c.pageEdgeTexture, c.pageEdgeVariation],
+  );
+  useEffect(() => () => pageEdgeMap.dispose(), [pageEdgeMap]);
 
   const makeCloth = (color: string) =>
     new THREE.MeshPhysicalMaterial({
@@ -365,13 +408,16 @@ export function Book({
 
   // fore-edge / head / tail get the striated (or user-supplied) map
   const pageMaterials = useMemo(() => {
-    const base = edgeTex ?? maps.pageEdge;
+    const base = edgeTex ?? pageEdgeMap;
+    const v = Math.min(1, Math.max(0, c.pageEdgeVariation));
 
     const fore = new THREE.MeshStandardMaterial({
       color: edgeTex ? "#ffffff" : c.edgeColor,
-      roughness: 0.92,
+      roughness: 0.92 + v * 0.06,
       metalness: 0,
       map: base,
+      bumpMap: edgeTex ? null : base,
+      bumpScale: edgeTex ? 0 : 0.02 + v * 0.12,
     });
 
     const topMap = base.clone();
@@ -380,6 +426,11 @@ export function Book({
     topMap.needsUpdate = true;
     const edgeTop = fore.clone();
     edgeTop.map = topMap;
+    if (!edgeTex) edgeTop.bumpMap = topMap;
+
+    // the rounded page block is an extrusion: group 0 = the two flat faces
+    // against the boards, group 1 = every wall (fore-edge, head, tail)
+    if (rounded) return [pageSideMaterial, fore];
 
     return [
       fore, // +x fore edge
@@ -389,7 +440,7 @@ export function Book({
       pageSideMaterial, // +z
       pageSideMaterial, // -z
     ];
-  }, [pageSideMaterial, maps, edgeTex, c.edgeColor]);
+  }, [pageSideMaterial, pageEdgeMap, edgeTex, c.edgeColor, c.pageEdgeVariation, rounded]);
 
   useFrame((state, dt) => {
     if (!group.current) return;
