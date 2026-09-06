@@ -408,13 +408,16 @@ export function Book({
 
   // fore-edge / head / tail get the striated (or user-supplied) map
   const pageMaterials = useMemo(() => {
-    const base = edgeTex ?? maps.pageEdge;
+    const base = edgeTex ?? pageEdgeMap;
+    const v = Math.min(1, Math.max(0, c.pageEdgeVariation));
 
     const fore = new THREE.MeshStandardMaterial({
       color: edgeTex ? "#ffffff" : c.edgeColor,
-      roughness: 0.92,
+      roughness: 0.92 + v * 0.06,
       metalness: 0,
       map: base,
+      bumpMap: edgeTex ? null : base,
+      bumpScale: edgeTex ? 0 : 0.02 + v * 0.12,
     });
 
     const topMap = base.clone();
@@ -423,6 +426,11 @@ export function Book({
     topMap.needsUpdate = true;
     const edgeTop = fore.clone();
     edgeTop.map = topMap;
+    if (!edgeTex) edgeTop.bumpMap = topMap;
+
+    // the rounded page block is an extrusion: group 0 = the two flat faces
+    // against the boards, group 1 = every wall (fore-edge, head, tail)
+    if (rounded) return [pageSideMaterial, fore];
 
     return [
       fore, // +x fore edge
@@ -432,7 +440,7 @@ export function Book({
       pageSideMaterial, // +z
       pageSideMaterial, // -z
     ];
-  }, [pageSideMaterial, maps, edgeTex, c.edgeColor]);
+  }, [pageSideMaterial, pageEdgeMap, edgeTex, c.edgeColor, c.pageEdgeVariation, rounded]);
 
   useFrame((state, dt) => {
     if (!group.current) return;
