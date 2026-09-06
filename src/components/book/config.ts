@@ -1,41 +1,57 @@
 /**
  * Every dimension, colour and light in the book is driven by this object, so
  * the whole model is configurable from the UI. Units: 1 unit ~= 2.5 cm.
+ *
+ * Naming rule: one physical concept = exactly one property. Legacy names only
+ * ever appear inside `migrateConfig`.
  */
+export type PageEdgeTexture = "smooth" | "natural" | "rough" | "deckled";
+
+export const PAGE_EDGE_TEXTURES: { key: PageEdgeTexture; label: string }[] = [
+  { key: "smooth", label: "Smooth" },
+  { key: "natural", label: "Natural" },
+  { key: "rough", label: "Rough" },
+  { key: "deckled", label: "Deckled" },
+];
+
 export type BookConfig = {
-  /* ---- case ---- */
-  width: number; // spine -> fore-edge
-  height: number;
-  pageDepth: number; // thickness of the text block
-  boardThickness: number; // board + cloth
-  cornerRadius: number; // fore-edge corner of the boards
-  edgeRound: number; // head/tail rounding of the case
+  /* ---- book ---- */
+  bookWidth: number; // spine -> fore-edge, closed
+  bookHeight: number; // head -> tail
+  pageBlockThickness: number; // thickness of the bound page block
+  boardThickness: number; // rigid board under the covering material
+  coverOverhang: number; // how far the boards project past the page block
 
-  /* ---- joint / spine ---- */
-  grooveOffset: number; // distance from the spine crown to the groove centre
-  grooveWidth: number;
-  grooveDepth: number;
-  spineBuckle: number; // how far the rounded spine bulges past the boards
-  spineSquareness: number; // 0 = fully rounded spine, 1 = flat/square spine
-  spineHollow: number; // 1 = full cavity behind the text block, 0 = pages meet the spine
-  grooveBlend: number; // 0..1, how softly the groove melts into the cover
+  /* ---- cover shape ---- */
+  coverCornerRadius: number; // rounded fore-edge corners of the boards
+  headTailEdgeRadius: number; // edge radius at head and tail of the case
 
-  /* ---- text block ---- */
-  marginTop: number;
-  marginBottom: number;
-  marginFore: number;
+  /* ---- spine & joint ---- */
+  jointPosition: number; // distance from the spine crown to the joint centre
+  jointWidth: number;
+  jointDepth: number;
+  jointSoftness: number; // 0..1, crisp -> soft transition into the cover
+  spineExtension: number; // how far the spine crown projects past the boards
+  spineProfileFlatness: number; // 0 = rounded cross-section, 1 = flat/squared
+  hollowBack: number; // 0 = page block meets the spine, 1 = pronounced hollow
 
-  /* ---- colour ---- */
+  /* ---- page block ---- */
+  headMargin: number; // extra inset at the head, on top of the overhang
+  tailMargin: number;
+  foreEdgeMargin: number;
+  pageBlockCornerRadius: number; // roundness of the page block's outer corners
+  pageEdgeVariation: number; // 0 = uniform leaves, 1 = naturally irregular
+  pageEdgeTexture: PageEdgeTexture;
+
+  /* ---- materials ---- */
   clothColor: string;
   spineColor: string;
   pageColor: string;
   edgeColor: string;
-
-  /* ---- material ---- */
   clothRoughness: number;
   clothSheen: number;
 
-  /* ---- light & shadow ---- */
+  /* ---- presentation ---- */
   ambient: number;
   keyIntensity: number;
   keyAzimuth: number; // degrees around the book
@@ -50,11 +66,11 @@ export type BookConfig = {
 export type TrimKey = "stripe" | "novel" | "pocket" | "large" | "square";
 
 export const TRIMS: Record<TrimKey, { label: string; width: number; height: number }> = {
-  stripe: { label: "Stripe Press (5.5 x 8.25 in)", width: 3.35, height: 5.0 },
-  novel: { label: "Trade hardcover (6 x 9 in)", width: 3.6, height: 5.45 },
-  pocket: { label: "Pocket (4.5 x 7 in)", width: 2.75, height: 4.25 },
-  large: { label: "Large format (7 x 10 in)", width: 4.25, height: 6.05 },
-  square: { label: "Square (8 x 8 in)", width: 4.85, height: 4.85 },
+  stripe: { label: "Stripe Press — 5.5 × 8.25 in", width: 3.35, height: 5.0 },
+  novel: { label: "Trade hardcover — 6 × 9 in", width: 3.6, height: 5.45 },
+  pocket: { label: "Pocket — 4.5 × 7 in", width: 2.75, height: 4.25 },
+  large: { label: "Large format — 7 × 10 in", width: 4.25, height: 6.05 },
+  square: { label: "Square — 8 × 8 in", width: 4.85, height: 4.85 },
 };
 
 export type PaperKey = "thin" | "standard" | "thick";
@@ -72,40 +88,50 @@ export type Aspects = {
   clothColor: string;
 };
 
+/** Page count + paper stock are the only inputs to the suggested thickness. */
+export function suggestedPageBlockThickness(pageCount: number, paper: PaperKey): number {
+  const leaves = Math.max(16, Math.round(pageCount / 2));
+  // mm -> scene units (1 unit = 25 mm)
+  return Math.min(2.6, Math.max(0.28, (leaves * PAPERS[paper].mmPerLeaf) / 25));
+}
+
 /**
  * Suggested configuration: everything the user doesn't care about is derived
  * from the few things they do — trim, extent, paper stock and cloth colour.
- * The joint groove in particular is proportional to the case thickness, which
- * is what keeps it looking right on both thin and fat books.
+ * The joint in particular is proportional to the case thickness, which is what
+ * keeps it looking right on both thin and fat books.
  */
 export function suggestConfig(a: Aspects): BookConfig {
   const trim = TRIMS[a.trim];
-  const leaves = Math.max(16, Math.round(a.pageCount / 2));
-  // mm -> scene units (1 unit = 25 mm)
-  const pageDepth = Math.min(2.6, Math.max(0.28, (leaves * PAPERS[a.paper].mmPerLeaf) / 25));
-  const boardThickness = 0.075 + pageDepth * 0.012;
-  const caseT = pageDepth + boardThickness * 2;
+  const pageBlockThickness = suggestedPageBlockThickness(a.pageCount, a.paper);
+  const boardThickness = 0.075 + pageBlockThickness * 0.012;
+  const caseT = pageBlockThickness + boardThickness * 2;
+  const coverOverhang = +(trim.height * 0.016).toFixed(3);
 
   return {
-    width: trim.width,
-    height: trim.height,
-    pageDepth,
+    bookWidth: trim.width,
+    bookHeight: trim.height,
+    pageBlockThickness,
     boardThickness,
-    cornerRadius: Math.min(0.075, trim.width * 0.016),
-    edgeRound: Math.min(0.05, caseT * 0.035),
+    coverOverhang,
 
-    grooveWidth: +(trim.width * 0.014 + caseT * 0.02).toFixed(3),
-    grooveDepth: +Math.min(boardThickness * 0.55, trim.width * 0.007).toFixed(3),
-    grooveOffset: +(trim.width * 0.028 + caseT * 0.06).toFixed(3),
-    spineBuckle: +(caseT * 0.055).toFixed(3),
-    spineSquareness: 0,
-    spineHollow: 1,
-    grooveBlend: 0.65,
+    coverCornerRadius: Math.min(0.075, trim.width * 0.016),
+    headTailEdgeRadius: Math.min(0.05, caseT * 0.035),
 
+    jointWidth: +(trim.width * 0.014 + caseT * 0.02).toFixed(3),
+    jointDepth: +Math.min(boardThickness * 0.55, trim.width * 0.007).toFixed(3),
+    jointPosition: +(trim.width * 0.028 + caseT * 0.06).toFixed(3),
+    spineExtension: +(caseT * 0.055).toFixed(3),
+    spineProfileFlatness: 0,
+    hollowBack: 1,
+    jointSoftness: 0.65,
 
-    marginTop: +(trim.height * 0.016).toFixed(3),
-    marginBottom: +(trim.height * 0.016).toFixed(3),
-    marginFore: +(trim.width * 0.021).toFixed(3),
+    headMargin: 0,
+    tailMargin: 0,
+    foreEdgeMargin: +(trim.width * 0.021 - coverOverhang).toFixed(3),
+    pageBlockCornerRadius: 0,
+    pageEdgeVariation: 0,
+    pageEdgeTexture: "natural",
 
     clothColor: a.clothColor,
     spineColor: a.clothColor,
@@ -135,6 +161,52 @@ export const DEFAULT_ASPECTS: Aspects = {
 };
 
 export const DEFAULT_CONFIG = suggestConfig(DEFAULT_ASPECTS);
+
+/** Current design-file format version. */
+export const DESIGN_VERSION = 2;
+
+/** Old property name -> canonical name. Used only when reading saved files. */
+const LEGACY_KEYS: Record<string, keyof BookConfig> = {
+  width: "bookWidth",
+  height: "bookHeight",
+  pageDepth: "pageBlockThickness",
+  cornerRadius: "coverCornerRadius",
+  edgeRound: "headTailEdgeRadius",
+  grooveOffset: "jointPosition",
+  grooveWidth: "jointWidth",
+  grooveDepth: "jointDepth",
+  grooveBlend: "jointSoftness",
+  spineBuckle: "spineExtension",
+  spineSquareness: "spineProfileFlatness",
+  spineHollow: "hollowBack",
+  marginTop: "headMargin",
+  marginBottom: "tailMargin",
+  marginFore: "foreEdgeMargin",
+};
+
+/**
+ * Bring any saved config (version 1 or 2) up to the current shape. Version 1
+ * files carried the cover overhang inside the page margins, so the overhang is
+ * zeroed and the margins are kept as-is — the book looks identical.
+ */
+export function migrateConfig(raw: unknown): BookConfig {
+  const input = (raw ?? {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = { ...DEFAULT_CONFIG };
+  let legacy = false;
+
+  for (const [k, v] of Object.entries(input)) {
+    const mapped = LEGACY_KEYS[k];
+    if (mapped) {
+      legacy = true;
+      out[mapped] = v;
+    } else if (k in DEFAULT_CONFIG) {
+      out[k] = v;
+    }
+  }
+
+  if (legacy && !("coverOverhang" in input)) out["coverOverhang"] = 0;
+  return out as BookConfig;
+}
 
 export const CLOTH_SWATCHES = [
   "#212e3e",
