@@ -343,9 +343,10 @@ export function Book({
   );
 
 
+  const rounded = c.pageBlockCornerRadius > 0.0005;
   const pageGeo = useMemo(
-    () => new THREE.BoxGeometry(m.pw, m.ph, m.pt, 1, 1, 1),
-    [m.pw, m.ph, m.pt],
+    () => buildPageBlockGeometry(m.pw, m.ph, m.pt, c.pageBlockCornerRadius),
+    [m.pw, m.ph, m.pt, c.pageBlockCornerRadius],
   );
   useEffect(() => () => pageGeo.dispose(), [pageGeo]);
 
@@ -362,10 +363,16 @@ export function Book({
   const maps = useMemo(() => {
     const clothNormal = makeClothNormalMap();
     const clothRough = makeClothRoughnessMap();
-    const pageEdge = makePageEdgeMap();
     const quill = makeStampMap(512, 512, drawQuill);
-    return { clothNormal, clothRough, pageEdge, quill };
+    return { clothNormal, clothRough, quill };
   }, []);
+
+  // striated page edges, re-cut whenever the edge style or variation changes
+  const pageEdgeMap = useMemo(
+    () => makePageEdgeMap(c.pageEdgeTexture, c.pageEdgeVariation),
+    [c.pageEdgeTexture, c.pageEdgeVariation],
+  );
+  useEffect(() => () => pageEdgeMap.dispose(), [pageEdgeMap]);
 
   const makeCloth = (color: string) =>
     new THREE.MeshPhysicalMaterial({
