@@ -580,7 +580,7 @@ export default function BookScene() {
               <div>
                 <p className="text-sm text-[#e8eef5]">Suggested build</p>
                 <p className="mt-0.5 text-[11px] text-[#7f93aa]">
-                  Pick the basics and every groove, board and margin is proportioned for you
+                  Pick the basics and every joint, board and margin is proportioned for you
                 </p>
               </div>
               <Sparkles size={15} className="mt-1 shrink-0 text-[#7f93aa]" />
