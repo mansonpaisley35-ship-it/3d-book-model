@@ -221,7 +221,7 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
       {
         key: "foreEdgeMargin",
         label: "Fore-edge margin",
-        min: -0.1,
+        min: 0,
         max: 0.3,
         step: 0.005,
         digits: 3,
