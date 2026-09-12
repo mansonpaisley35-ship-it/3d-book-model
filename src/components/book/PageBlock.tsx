@@ -43,7 +43,13 @@ function Leaf({
   // pivot at the spine edge so rotation.y sweeps the leaf open
   return (
     <group position={[-width / 2, 0, z]} rotation={[0, flip, 0]}>
-      <mesh geometry={geo} material={materials} position={[width / 2, 0, 0]} castShadow receiveShadow />
+      <mesh
+        geometry={geo}
+        material={materials}
+        position={[width / 2, 0, 0]}
+        castShadow
+        receiveShadow
+      />
     </group>
   );
 }

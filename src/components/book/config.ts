@@ -128,7 +128,9 @@ export function suggestConfig(a: Aspects): BookConfig {
 
     headMargin: 0,
     tailMargin: 0,
-    foreEdgeMargin: +(trim.width * 0.021 - coverOverhang).toFixed(3),
+    // the square (coverOverhang) already sets the cover's projection on all
+    // three fore edges; these margins are any *extra* inset on top of it
+    foreEdgeMargin: 0,
     pageBlockCornerRadius: 0,
     pageEdgeVariation: 0,
     pageEdgeTexture: "natural",

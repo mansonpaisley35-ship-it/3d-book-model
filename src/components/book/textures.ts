@@ -12,7 +12,7 @@ export function makeClothNormalMap(size = 512): THREE.Texture {
   const step = 4;
   for (let y = 0; y < size; y += step) {
     for (let x = 0; x < size; x += step) {
-      const warp = ((x / step + y / step) % 2) === 0;
+      const warp = (x / step + y / step) % 2 === 0;
       const n = (Math.random() - 0.5) * 26;
       const gx = (warp ? 18 : -18) + n;
       const gy = (warp ? -18 : 18) + n;
@@ -52,7 +52,10 @@ export function makeClothRoughnessMap(size = 512): THREE.Texture {
  */
 export type PageEdgeStyle = "smooth" | "natural" | "rough" | "deckled";
 
-const EDGE_STYLES: Record<PageEdgeStyle, { contrast: number; every: number; line: number; wave: number }> = {
+const EDGE_STYLES: Record<
+  PageEdgeStyle,
+  { contrast: number; every: number; line: number; wave: number }
+> = {
   smooth: { contrast: 12, every: 5, line: 0.12, wave: 0 },
   natural: { contrast: 34, every: 3, line: 0.35, wave: 0 },
   rough: { contrast: 58, every: 2, line: 0.55, wave: 1.4 },
@@ -104,7 +107,11 @@ export function makePageEdgeMap(
 }
 
 /** White-ink / blind-deboss artwork used as an alpha + bump source. */
-export function makeStampMap(w: number, h: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
+export function makeStampMap(
+  w: number,
+  h: number,
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+) {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;

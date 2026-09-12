@@ -253,7 +253,6 @@ function buildSpineGeometry(c: BookConfig) {
   return extrude(s, c);
 }
 
-
 /**
  * Fit + crop an image into a surface of the given aspect via the texture's
  * UV transform: repeat = visible slice of the image, offset = pan.
@@ -342,7 +341,6 @@ export function Book({
     [boardGeo, spineGeo],
   );
 
-
   const rounded = c.pageBlockCornerRadius > 0.0005;
   const pageGeo = useMemo(
     () => buildPageBlockGeometry(m.pw, m.ph, m.pt, c.pageBlockCornerRadius),
@@ -399,7 +397,6 @@ export function Book({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [maps, c.clothRoughness, c.clothSheen, c.spineColor],
   );
-
 
   const pageSideMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: c.pageColor, roughness: 0.95 }),

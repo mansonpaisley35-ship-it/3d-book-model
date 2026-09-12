@@ -20,7 +20,11 @@ export async function renderPdfPages(
     maxPages = 48,
     targetWidth = 640,
     onProgress,
-  }: { maxPages?: number; targetWidth?: number; onProgress?: (done: number, total: number) => void } = {},
+  }: {
+    maxPages?: number;
+    targetWidth?: number;
+    onProgress?: (done: number, total: number) => void;
+  } = {},
 ): Promise<PdfPage[]> {
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjs.getDocument({ data }).promise;
