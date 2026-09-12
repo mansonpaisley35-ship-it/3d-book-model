@@ -8,6 +8,7 @@ import {
   Download,
   Feather,
   FileText,
+  Info,
   Loader2,
   RotateCcw,
   Ruler,
@@ -26,11 +27,14 @@ import {
 import {
   CLOTH_SWATCHES,
   DEFAULT_ASPECTS,
+  PAGE_EDGE_TEXTURES,
   PAPERS,
   TRIMS,
+  migrateConfig,
   suggestConfig,
   type Aspects,
   type BookConfig,
+  type PageEdgeTexture,
   type PaperKey,
   type TrimKey,
 } from "./config";
@@ -296,9 +300,10 @@ export default function BookScene() {
   const loadDesign = async (file?: File | null) => {
     if (!file) return;
     try {
-      const data = JSON.parse(await file.text()) as { aspects?: Aspects; config?: BookConfig };
+      const data = JSON.parse(await file.text()) as { aspects?: Aspects; config?: unknown };
       if (data.aspects) setAspects(data.aspects);
-      if (data.config) setConfig((prev) => ({ ...prev, ...data.config }));
+      // older files used the pre-rename property names — migrate them
+      if (data.config) setConfig(migrateConfig(data.config));
     } catch (err) {
       console.error("Could not read that design file", err);
     }
@@ -384,9 +389,9 @@ export default function BookScene() {
 
   // keep the book comfortably framed whatever size it is built at
   const fit = useMemo(() => {
-    const span = Math.max(config.height, config.width * 1.25);
+    const span = Math.max(config.bookHeight, config.bookWidth * 1.25);
     return { scale: (0.76 * 5.0) / span, dist: Math.max(0.85, span / 5.0) };
-  }, [config.height, config.width]);
+  }, [config.bookHeight, config.bookWidth]);
 
   const key = useMemo(() => {
     const az = (config.keyAzimuth * Math.PI) / 180;
