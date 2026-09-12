@@ -17,13 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { designFiles, designJson, downloadFile } from "./export";
-import {
-  Book,
-  DEFAULT_ADJUST,
-  type BookAdjusts,
-  type BookImages,
-  type ImageAdjust,
-} from "./Book";
+import { Book, DEFAULT_ADJUST, type BookAdjusts, type BookImages, type ImageAdjust } from "./Book";
 import {
   CLOTH_SWATCHES,
   DEFAULT_ASPECTS,
@@ -309,8 +303,6 @@ export default function BookScene() {
     }
   };
 
-
-
   /** Change one of the high-level aspects and re-derive the suggested build. */
   const applyAspects = (patch: Partial<Aspects>) => {
     const next = { ...aspects, ...patch };
@@ -318,8 +310,7 @@ export default function BookScene() {
     setConfig(suggestConfig(next));
   };
 
-  const patchConfig = (patch: Partial<BookConfig>) =>
-    setConfig((prev) => ({ ...prev, ...patch }));
+  const patchConfig = (patch: Partial<BookConfig>) => setConfig((prev) => ({ ...prev, ...patch }));
 
   const importPdf = async (file?: File | null) => {
     if (!file) return;
@@ -397,11 +388,11 @@ export default function BookScene() {
     const az = (config.keyAzimuth * Math.PI) / 180;
     const el = (config.keyElevation * Math.PI) / 180;
     const r = 11;
-    return [
-      Math.sin(az) * Math.cos(el) * r,
-      Math.sin(el) * r,
-      Math.cos(az) * Math.cos(el) * r,
-    ] as [number, number, number];
+    return [Math.sin(az) * Math.cos(el) * r, Math.sin(el) * r, Math.cos(az) * Math.cos(el) * r] as [
+      number,
+      number,
+      number,
+    ];
   }, [config.keyAzimuth, config.keyElevation]);
 
   const panelClass =
@@ -442,8 +433,18 @@ export default function BookScene() {
             shadow-mapSize={[2048, 2048]}
             shadow-bias={-0.0006}
           />
-          <directionalLight position={[-6, 3, -5]} intensity={config.rimIntensity} color="#7fa6d6" />
-          <spotLight position={[0, 7, -6]} angle={0.6} penumbra={1} intensity={0.8} color="#cfe0f5" />
+          <directionalLight
+            position={[-6, 3, -5]}
+            intensity={config.rimIntensity}
+            color="#7fa6d6"
+          />
+          <spotLight
+            position={[0, 7, -6]}
+            angle={0.6}
+            penumbra={1}
+            intensity={0.8}
+            color="#cfe0f5"
+          />
 
           {/* hand-built studio environment (no remote HDRI): large soft box lights */}
           <Environment resolution={256} environmentIntensity={config.envIntensity} frames={1}>
@@ -644,8 +645,13 @@ export default function BookScene() {
 
           {/* -------- fine control, grouped by book construction -------- */}
           {GROUPS.map((group) => (
-            <div key={group.title} className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">{group.title}</p>
+            <div
+              key={group.title}
+              className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4"
+            >
+              <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">
+                {group.title}
+              </p>
               <div className="mt-3 space-y-3">
                 {group.fields.map((f) => (
                   <label key={f.key} className="block">
@@ -653,7 +659,11 @@ export default function BookScene() {
                       <span className="flex items-center gap-1">
                         {f.label}
                         {f.tip && (
-                          <span title={f.tip} aria-label={f.tip} className="cursor-help text-[#65788e]">
+                          <span
+                            title={f.tip}
+                            aria-label={f.tip}
+                            className="cursor-help text-[#65788e]"
+                          >
                             <Info size={11} />
                           </span>
                         )}
@@ -720,7 +730,10 @@ export default function BookScene() {
             <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">Colour</p>
             <div className="mt-3 space-y-2">
               {COLOR_FIELDS.map(([field, label]) => (
-                <label key={field} className="flex items-center justify-between text-[11px] text-[#9db0c6]">
+                <label
+                  key={field}
+                  className="flex items-center justify-between text-[11px] text-[#9db0c6]"
+                >
                   {label}
                   <input
                     type="color"
@@ -731,7 +744,7 @@ export default function BookScene() {
                     className="h-7 w-12 cursor-pointer rounded border border-white/10 bg-transparent"
                   />
                 </label>
-                ))}
+              ))}
             </div>
           </div>
 
@@ -778,7 +791,8 @@ export default function BookScene() {
                 }}
                 className={`${chipClass} flex items-center gap-1`}
               >
-                {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? "Copied" : "Copy JSON"}
+                {copied ? <Check size={11} /> : <Copy size={11} />}{" "}
+                {copied ? "Copied" : "Copy JSON"}
               </button>
 
               <label className={`${chipClass} flex cursor-pointer items-center gap-1`}>
@@ -792,7 +806,6 @@ export default function BookScene() {
               </label>
             </div>
           </div>
-
         </div>
       )}
 
@@ -946,7 +959,9 @@ export default function BookScene() {
                             step={step}
                             value={adj[field] as number}
                             onChange={(e) =>
-                              patchAdjust(slot, { [field]: Number(e.target.value) } as Partial<ImageAdjust>)
+                              patchAdjust(slot, {
+                                [field]: Number(e.target.value),
+                              } as Partial<ImageAdjust>)
                             }
                             className="mt-1 w-full accent-[#e8eef5]"
                           />

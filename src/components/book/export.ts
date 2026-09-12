@@ -365,7 +365,11 @@ renderer.setAnimationLoop(() => {
 
 export function designFiles(config: BookConfig, aspects: Aspects): DesignFile[] {
   return [
-    { name: `book-design-${stamp()}.json`, mime: "application/json", contents: designJson(config, aspects) },
+    {
+      name: `book-design-${stamp()}.json`,
+      mime: "application/json",
+      contents: designJson(config, aspects),
+    },
     { name: `book-design-${stamp()}.js`, mime: "text/javascript", contents: designModule(config) },
     { name: `book-design-${stamp()}.html`, mime: "text/html", contents: designHtml(config) },
   ];
