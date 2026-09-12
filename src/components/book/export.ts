@@ -25,15 +25,18 @@ const bump = (u) => {
 };
 
 export function metrics(c) {
-  const W = c.width;
-  const H = c.height;
-  const T = c.pageDepth + c.boardThickness * 2;
-  const hingeX = -W / 2 + c.grooveOffset;
-  const hingeW = c.grooveWidth / 2;
+  const W = c.bookWidth;
+  const H = c.bookHeight;
+  const T = c.pageBlockThickness + c.boardThickness * 2;
+  const hingeX = -W / 2 + c.jointPosition;
+  const hingeW = c.jointWidth / 2;
 
-  const pageForeX = W / 2 - c.marginFore;
-  const spineInnerX = -W / 2 - c.spineBuckle + c.boardThickness * 1.15;
-  const hollow = clamp01(c.spineHollow);
+  const insetFore = c.coverOverhang + c.foreEdgeMargin;
+  const insetHead = c.coverOverhang + c.headMargin;
+  const insetTail = c.coverOverhang + c.tailMargin;
+  const pageForeX = W / 2 - insetFore;
+  const spineInnerX = -W / 2 - c.spineExtension + c.boardThickness * 1.15;
+  const hollow = clamp01(c.hollowBack);
   const pageSpineX = spineInnerX + (hingeX + hingeW * 0.5 - spineInnerX) * hollow;
 
   return {
@@ -44,10 +47,10 @@ export function metrics(c) {
     hingeW,
     spineInnerX,
     pageWidth: Math.max(0.3, pageForeX - pageSpineX),
-    pageHeight: Math.max(0.3, H - c.marginTop - c.marginBottom),
-    pageDepth: Math.max(0.06, c.pageDepth - 0.04),
+    pageHeight: Math.max(0.3, H - insetHead - insetTail),
+    pageDepth: Math.max(0.06, c.pageBlockThickness - 0.04),
     pageCX: (pageForeX + pageSpineX) / 2,
-    pageCY: (c.marginBottom - c.marginTop) / 2,
+    pageCY: (insetTail - insetHead) / 2,
   };
 }
 
@@ -57,7 +60,7 @@ export function metrics(c) {
  */
 export function joint(c) {
   const { W, T, hingeX, hingeW } = metrics(c);
-  const half = hingeW * (1 + clamp01(c.grooveBlend));
+  const half = hingeW * (1 + clamp01(c.jointSoftness));
   const jointX = hingeX - half;
   const overlap = Math.min(0.005, half * 0.3);
   return { W, T, half, jointX, overlap, hingeX };
@@ -65,8 +68,8 @@ export function joint(c) {
 
 /** Cross-section in XY, swept along the book's height, head/tail rounded. */
 function extrude(THREE, shape, c) {
-  const ER = Math.min(c.edgeRound, c.boardThickness * 0.9, c.height / 20);
-  const depth = c.height - ER * 2;
+  const ER = Math.min(c.headTailEdgeRadius, c.boardThickness * 0.9, c.bookHeight / 20);
+  const depth = c.bookHeight - ER * 2;
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
     curveSegments: 96,
@@ -86,8 +89,8 @@ function extrude(THREE, shape, c) {
 export function buildBoardGeometry(THREE, c) {
   const { W, T, half, jointX, overlap, hingeX } = joint(c);
   const BOARD = c.boardThickness;
-  const D = Math.min(c.grooveDepth, BOARD * 0.7);
-  const R = Math.min(c.cornerRadius, BOARD * 0.45);
+  const D = Math.min(c.jointDepth, BOARD * 0.7);
+  const R = Math.min(c.coverCornerRadius, BOARD * 0.45);
   const out = T / 2;
   const inn = T / 2 - BOARD;
   const tip = jointX - overlap;
@@ -121,9 +124,9 @@ export function buildBoardGeometry(THREE, c) {
 export function buildSpineGeometry(THREE, c) {
   const { T, jointX } = joint(c);
   const BOARD = c.boardThickness;
-  const crown = -c.width / 2 - c.spineBuckle;
+  const crown = -c.bookWidth / 2 - c.spineExtension;
 
-  const q = clamp01(c.spineSquareness);
+  const q = clamp01(c.spineProfileFlatness);
   const m = 2 + q * q * 12;
 
   const b = T / 2;
@@ -154,11 +157,34 @@ export function buildSpineGeometry(THREE, c) {
   return extrude(THREE, s, c);
 }
 
-/** The text block as one solid slab (swap for real leaves when animating). */
+/**
+ * The page block as one slab, with the fore-edge corners rounded by
+ * pageBlockCornerRadius (swap for real leaves when animating).
+ */
 export function buildTextBlockGeometry(THREE, c) {
   const m = metrics(c);
+  const w = m.pageWidth;
+  const h = m.pageHeight;
+  const t = m.pageDepth;
+  const R = Math.max(0, Math.min(c.pageBlockCornerRadius, w / 2 - 0.01, h / 2 - 0.01));
   // width -> X, height -> Y, thickness -> Z (same axes the boards end up on)
-  return new THREE.BoxGeometry(m.pageWidth, m.pageHeight, m.pageDepth);
+  if (R <= 0.0005) return new THREE.BoxGeometry(w, h, t);
+
+  const s = new THREE.Shape();
+  const x1 = w / 2;
+  const y1 = h / 2;
+  s.moveTo(-x1, -y1);
+  s.lineTo(x1 - R, -y1);
+  s.quadraticCurveTo(x1, -y1, x1, -y1 + R);
+  s.lineTo(x1, y1 - R);
+  s.quadraticCurveTo(x1, y1, x1 - R, y1);
+  s.lineTo(-x1, y1);
+  s.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(s, { depth: t, curveSegments: 24, bevelEnabled: false });
+  geo.translate(0, 0, -t / 2);
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /**
@@ -220,7 +246,7 @@ export function designJson(config: BookConfig, aspects: Aspects) {
   return JSON.stringify(
     {
       format: "book-canvas-design",
-      version: 1,
+      version: 2,
       exported: new Date().toISOString(),
       units: "1 unit = 25 mm",
       parts: ["frontBoard", "backBoard", "spineBridge", "textBlock"],
@@ -286,7 +312,7 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = config.envIntensity;
 
 const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 100);
-const span = Math.max(config.height, config.width * 1.25);
+const span = Math.max(config.bookHeight, config.bookWidth * 1.25);
 camera.position.set(span * 0.8, span * 0.4, span * 2.1);
 
 const book = buildBook(THREE, config);
@@ -312,7 +338,7 @@ if (config.shadows) {
     new THREE.ShadowMaterial({ opacity: config.shadowOpacity })
   );
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -config.height / 2 - 0.02;
+  floor.position.y = -config.bookHeight / 2 - 0.02;
   floor.receiveShadow = true;
   scene.add(floor);
 }
