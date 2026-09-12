@@ -637,34 +637,66 @@ export default function BookScene() {
             </button>
           </div>
 
-          {/* -------- fine control -------- */}
+          {/* -------- fine control, grouped by book construction -------- */}
           {GROUPS.map((group) => (
             <div key={group.title} className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">{group.title}</p>
               <div className="mt-3 space-y-3">
-                {group.fields.map(([field, label, min, max, step, digits]) => (
-                  <label key={field} className="block">
-                    <span className="flex items-center justify-between text-[11px] text-[#9db0c6]">
-                      {label}
+                {group.fields.map((f) => (
+                  <label key={f.key} className="block">
+                    <span className="flex items-center justify-between gap-2 text-[11px] text-[#9db0c6]">
+                      <span className="flex items-center gap-1">
+                        {f.label}
+                        {f.tip && (
+                          <span title={f.tip} aria-label={f.tip} className="cursor-help text-[#65788e]">
+                            <Info size={11} />
+                          </span>
+                        )}
+                      </span>
                       <span className="tabular-nums text-[#7f93aa]">
-                        {(config[field] as number).toFixed(digits ?? 2)}
+                        {(config[f.key] as number).toFixed(f.digits ?? 2)}
                       </span>
                     </span>
                     <input
                       type="range"
-                      min={min}
-                      max={max}
-                      step={step}
-                      value={config[field] as number}
+                      min={f.min}
+                      max={f.max}
+                      step={f.step}
+                      value={config[f.key] as number}
                       onChange={(e) =>
-                        patchConfig({ [field]: Number(e.target.value) } as Partial<BookConfig>)
+                        patchConfig({ [f.key]: Number(e.target.value) } as Partial<BookConfig>)
                       }
                       className="mt-1 w-full accent-[#e8eef5]"
                     />
+                    {f.ends && (
+                      <span className="flex justify-between text-[9px] tracking-[0.14em] text-[#65788e] uppercase">
+                        <span>{f.ends[0]}</span>
+                        <span>{f.ends[1]}</span>
+                      </span>
+                    )}
                   </label>
                 ))}
 
-                {group.title === "Light & shadow" && (
+                {group.title === "Page block" && (
+                  <label className="block">
+                    <span className="text-[11px] text-[#9db0c6]">Page edge texture</span>
+                    <select
+                      value={config.pageEdgeTexture}
+                      onChange={(e) =>
+                        patchConfig({ pageEdgeTexture: e.target.value as PageEdgeTexture })
+                      }
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-[#131a22] px-3 py-2 text-[12px] text-[#e8eef5]"
+                    >
+                      {PAGE_EDGE_TEXTURES.map((t) => (
+                        <option key={t.key} value={t.key}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {group.title === "Lighting & presentation" && (
                   <label className="flex items-center justify-between text-[11px] text-[#9db0c6]">
                     Cast shadows
                     <input
