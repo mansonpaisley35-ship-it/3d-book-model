@@ -454,6 +454,10 @@ export function Book({
 
   // pages 1 and N are the covers, so the interior makes this many spreads
   const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  /* The split block is only mounted while the book is open: an unmounted leaf
+   * cannot swallow the very click that opens the book. */
+  const spreadOpen = !!source && !!reading && reading.open;
+
 
   useFrame((state, dt) => {
     if (!group.current) return;
@@ -501,6 +505,7 @@ export function Book({
           <group ref={frontCover}>
             <group position={[-joint(c).jointX, 0, -m.T / 2]}>
               <mesh
+                name="frontBoard"
                 geometry={boardGeo}
                 material={boardMaterial}
                 castShadow
@@ -533,6 +538,7 @@ export function Book({
 
         {/* back board — same plate, flipped, so its joint groove matches the front */}
         <mesh
+          name="backBoard"
           geometry={boardGeo}
           material={boardMaterial}
           rotation={[Math.PI, 0, 0]}
@@ -542,6 +548,7 @@ export function Book({
         />
         {/* spine / edge bridge */}
         <mesh
+          name="spine"
           geometry={spineGeo}
           material={spineMaterial}
           castShadow
@@ -551,17 +558,19 @@ export function Book({
 
         {/* text block, inset by the page margins */}
         <group position={[m.pageCX, m.pageCY, 0]} ref={closedBlock}>
-          <mesh geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
+          <mesh name="closedBlock" geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
         </group>
 
         {/* with a PDF imported, the block becomes two bendable halves and the
          * leaf that is turning, hinged on the spine */}
         <group position={[m.pageCX - m.pw / 2, m.pageCY, 0]} ref={openBlock} visible={false}>
-          {source && reading && (
+          {source && reading && spreadOpen && (
             <OpenBook
               width={m.pw}
               height={m.ph}
               thickness={m.pt}
+              caseHalf={m.T / 2}
+              board={c.boardThickness}
               source={source}
               motion={reading.motion}
               spread={reading.spread}
