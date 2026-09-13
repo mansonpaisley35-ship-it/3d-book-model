@@ -57,6 +57,7 @@ type LeafUpdate = (parts: { group: THREE.Group; bones: THREE.Bone[]; dt: number 
 
 /** One bendable part, hinged at the spine. */
 function FlexLeaf({
+  name,
   w,
   h,
   t,
@@ -65,6 +66,7 @@ function FlexLeaf({
   onPointerDown,
   onClick,
 }: {
+  name: string;
   w: number;
   h: number;
   t: number;
@@ -93,6 +95,7 @@ function FlexLeaf({
       <group position={[w / 2, 0, 0]}>
         <primitive object={built.bones[0]!} />
         <skinnedMesh
+          name={name}
           geometry={built.geo}
           material={materials}
           skeleton={built.skeleton}
@@ -194,6 +197,12 @@ export function OpenBook({
     }
   };
 
+  /*
+   * The swing and the lift live on the ROOT BONE, never on the group: a skinned
+   * mesh keeps the world matrix it was bound with, so transforming a parent of
+   * both mesh and skeleton applies the move twice and shears the skin. The root
+   * bone sits exactly on the spine hinge, so rotating it hinges the whole half.
+   */
   const half = (side: -1 | 1) => (parts: {
     group: THREE.Group;
     bones: THREE.Bone[];
@@ -201,9 +210,11 @@ export function OpenBook({
   }) => {
     const { open } = motion.current;
     bend(parts.bones, side, open, 0);
-    // the swing lives on the root BONE, not on the group: a skinned mesh binds
-    // to its world matrix, so moving the group would shear the skin
-    parts.bones[0]!.rotation.y += side < 0 ? -Math.PI * open : 0;
+    const halfT = side < 0 ? leftT : rightT;
+    const root = parts.bones[0]!;
+    // as the book opens, each stack lifts off the mid-plane onto its own cover
+    root.position.z = -side * (thickness / 2 - halfT / 2) * open;
+    root.rotation.y += side < 0 ? -Math.PI * open : 0;
   };
 
   const turning = (parts: { group: THREE.Group; bones: THREE.Bone[]; dt: number }) => {
@@ -212,8 +223,12 @@ export function OpenBook({
     // the leaf bows most when it stands upright half way through the sweep
     const curl = Math.sin(Math.PI * turn) * (turnDir ?? 1);
     bend(parts.bones, 0, open, curl);
-    parts.bones[0]!.rotation.y += -Math.PI * tau * open;
+    const root = parts.bones[0]!;
+    root.position.z = 0;
+    root.rotation.y += -Math.PI * tau * open;
   };
+
+
 
   /* ---------------- hand-turning a page by dragging its edge --------------- */
   const drag = useRef<{ dir: TurnDir; x0: number; moved: boolean } | null>(null);
@@ -243,6 +258,9 @@ export function OpenBook({
   }, [setDrag, releaseDrag]);
 
   const grab = (dir: TurnDir) => (e: { nativeEvent: PointerEvent; stopPropagation: () => void }) => {
+    // only grab a leaf once the book is actually open, otherwise the very
+    // click that opens the book would be spent turning a page
+    if (motion.current.open < 0.6) return;
     e.stopPropagation();
     if (!onTurn(dir, true)) return;
     drag.current = { dir, x0: e.nativeEvent.clientX, moved: false };
@@ -250,34 +268,33 @@ export function OpenBook({
 
   return (
     <group>
-      {/* left half */}
-      <group position={[0, 0, leftT / 2 + minT]}>
-        <FlexLeaf
-          w={width}
-          h={height}
-          t={leftT}
-          materials={leftMats}
-          update={half(-1)}
-          onPointerDown={grab(-1)}
-        />
-      </group>
+      {/* left half — swings over onto the front cover */}
+      <FlexLeaf
+        name="leftHalf"
+        w={width}
+        h={height}
+        t={leftT}
+        materials={leftMats}
+        update={half(-1)}
+        onPointerDown={grab(-1)}
+      />
 
-      {/* right half */}
-      <group position={[0, 0, -rightT / 2 - minT]}>
-        <FlexLeaf
-          w={width}
-          h={height}
-          t={rightT}
-          materials={rightMats}
-          update={half(1)}
-          onPointerDown={grab(1)}
-        />
-      </group>
+      {/* right half — stays on the back cover */}
+      <FlexLeaf
+        name="rightHalf"
+        w={width}
+        h={height}
+        t={rightT}
+        materials={rightMats}
+        update={half(1)}
+        onPointerDown={grab(1)}
+      />
 
       {/* the leaf in flight */}
       {turnDir && (
-        <FlexLeaf w={width} h={height} t={leafT} materials={turnMats} update={turning} />
+        <FlexLeaf name="turnLeaf" w={width} h={height} t={leafT} materials={turnMats} update={turning} />
       )}
+
     </group>
   );
 }

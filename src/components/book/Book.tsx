@@ -451,9 +451,14 @@ export function Book({
   const recentre = useRef<THREE.Group>(null);
   const closedBlock = useRef<THREE.Group>(null);
   const openBlock = useRef<THREE.Group>(null);
+  const probed = useRef(false);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
   const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  /* The split block is only mounted while the book is open: an unmounted leaf
+   * cannot swallow the very click that opens the book. */
+  const spreadOpen = !!source && !!reading && reading.open;
+
 
   useFrame((state, dt) => {
     if (!group.current) return;
@@ -470,6 +475,25 @@ export function Book({
     // an open book is twice as wide, so pull it back into frame
     const s = 1 - 0.44 * open;
     group.current.scale.setScalar(s);
+    if (open > 0.97 && !probed.current) {
+      probed.current = true;
+      console.log("PROBE metrics jointX", joint(c).jointX, "W", m.W, "T", m.T, "pageCX", m.pageCX, "pw", m.pw, "pt", m.pt);
+      console.log("PROBE state open", open, "cover?", !!frontCover.current, frontCover.current?.rotation.y, "recentre", recentre.current?.position.x, "scale", group.current.scale.x);
+      group.current.traverse((o) => {
+        const sk = o as THREE.SkinnedMesh;
+        if (sk.isSkinnedMesh) {
+          const bones = sk.skeleton.bones;
+          const a = new THREE.Vector3();
+          const z = new THREE.Vector3();
+          bones[0]!.getWorldPosition(a);
+          bones[bones.length - 1]!.getWorldPosition(z);
+          console.log("PROBE skin", o.name, a.toArray().map((n) => +n.toFixed(2)), z.toArray().map((n) => +n.toFixed(2)));
+        } else if ((o as THREE.Mesh).isMesh) {
+          const b = new THREE.Box3().setFromObject(o);
+          console.log("PROBE", o.name, b.min.toArray().map((n) => +n.toFixed(2)), b.max.toArray().map((n) => +n.toFixed(2)), o.visible);
+        }
+      });
+    }
     if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
     if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
   });
@@ -501,6 +525,7 @@ export function Book({
           <group ref={frontCover}>
             <group position={[-joint(c).jointX, 0, -m.T / 2]}>
               <mesh
+                name="frontBoard"
                 geometry={boardGeo}
                 material={boardMaterial}
                 castShadow
@@ -533,6 +558,7 @@ export function Book({
 
         {/* back board — same plate, flipped, so its joint groove matches the front */}
         <mesh
+          name="backBoard"
           geometry={boardGeo}
           material={boardMaterial}
           rotation={[Math.PI, 0, 0]}
@@ -542,6 +568,7 @@ export function Book({
         />
         {/* spine / edge bridge */}
         <mesh
+          name="spine"
           geometry={spineGeo}
           material={spineMaterial}
           castShadow
@@ -551,13 +578,13 @@ export function Book({
 
         {/* text block, inset by the page margins */}
         <group position={[m.pageCX, m.pageCY, 0]} ref={closedBlock}>
-          <mesh geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
+          <mesh name="closedBlock" geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
         </group>
 
         {/* with a PDF imported, the block becomes two bendable halves and the
          * leaf that is turning, hinged on the spine */}
         <group position={[m.pageCX - m.pw / 2, m.pageCY, 0]} ref={openBlock} visible={false}>
-          {source && reading && (
+          {source && reading && spreadOpen && (
             <OpenBook
               width={m.pw}
               height={m.ph}
