@@ -158,13 +158,14 @@ export function OpenBook({
   const leftVisible = turnDir === -1 ? Math.max(1, 2 * k - 1) : 2 * k + 1;
   const rightVisible = turnDir === 1 ? 2 * k + 4 : 2 * k + 2;
 
+  const dbg = (c: string) => Array(6).fill(new THREE.MeshStandardMaterial({ color: c }));
   const leftMats = useMemo(
-    () => faces(null, page(leftVisible)),
+    () => dbg("#ff0000"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [leftVisible, paper, source, rev],
   );
   const rightMats = useMemo(
-    () => faces(page(rightVisible), null),
+    () => dbg("#00ff00"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rightVisible, paper, source, rev],
   );
