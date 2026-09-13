@@ -20,7 +20,7 @@ const SEGMENTS = 16;
 function buildSkinned(w: number, h: number, t: number) {
   const geo = new THREE.BoxGeometry(w, h, t, SEGMENTS, 1, 1);
   const segW = w / SEGMENTS;
-  const pos = geo.attributes.position;
+  const pos = geo.attributes["position"] as THREE.BufferAttribute;
   const skinIndices: number[] = [];
   const skinWeights: number[] = [];
 
@@ -91,7 +91,7 @@ function FlexLeaf({
     <group ref={group}>
       {/* the mesh starts at the hinge and reaches out to the fore-edge */}
       <group position={[w / 2, 0, 0]}>
-        <primitive object={built.bones[0]} />
+        <primitive object={built.bones[0]!} />
         <skinnedMesh
           geometry={built.geo}
           material={materials}
