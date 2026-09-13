@@ -158,14 +158,13 @@ export function OpenBook({
   const leftVisible = turnDir === -1 ? Math.max(1, 2 * k - 1) : 2 * k + 1;
   const rightVisible = turnDir === 1 ? 2 * k + 4 : 2 * k + 2;
 
-  const dbg = (c: string) => Array(6).fill(new THREE.MeshStandardMaterial({ color: c }));
   const leftMats = useMemo(
-    () => dbg("#ff0000"),
+    () => faces(null, page(leftVisible)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [leftVisible, paper, source, rev],
   );
   const rightMats = useMemo(
-    () => dbg("#00ff00"),
+    () => faces(page(rightVisible), null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rightVisible, paper, source, rev],
   );
@@ -201,17 +200,19 @@ export function OpenBook({
     dt: number;
   }) => {
     const { open } = motion.current;
-    parts.group.rotation.y = side < 0 ? -Math.PI * open : 0;
     bend(parts.bones, side, open, 0);
+    // the swing lives on the root BONE, not on the group: a skinned mesh binds
+    // to its world matrix, so moving the group would shear the skin
+    parts.bones[0]!.rotation.y += side < 0 ? -Math.PI * open : 0;
   };
 
   const turning = (parts: { group: THREE.Group; bones: THREE.Bone[]; dt: number }) => {
     const { open, turn } = motion.current;
     const tau = turnDir === 1 ? turn : 1 - turn;
-    parts.group.rotation.y = -Math.PI * tau * open;
     // the leaf bows most when it stands upright half way through the sweep
     const curl = Math.sin(Math.PI * turn) * (turnDir ?? 1);
     bend(parts.bones, 0, open, curl);
+    parts.bones[0]!.rotation.y += -Math.PI * tau * open;
   };
 
   /* ---------------- hand-turning a page by dragging its edge --------------- */
