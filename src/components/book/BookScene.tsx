@@ -435,7 +435,8 @@ export default function BookScene() {
               autoRotate={false}
               images={images}
               adjusts={adjusts}
-              pages={pages}
+              source={source}
+              reading={reading}
               config={config}
               onEdit={(slot) => openEditor(slot)}
             />
@@ -855,7 +856,7 @@ export default function BookScene() {
 
             <div className="mt-3 flex items-center gap-2">
               <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
-                {pages.length ? "Replace PDF" : "Import PDF"}
+                {source ? "Replace PDF" : "Import PDF"}
                 <input
                   type="file"
                   accept="application/pdf"
@@ -863,7 +864,7 @@ export default function BookScene() {
                   onChange={(e) => void importPdf(e.target.files?.[0])}
                 />
               </label>
-              {pages.length > 0 && (
+              {source && (
                 <button onClick={clearPdf} className={chipClass}>
                   Remove
                 </button>
@@ -873,13 +874,21 @@ export default function BookScene() {
             {pdfBusy && (
               <p className="mt-3 flex items-center gap-2 text-[11px] text-[#9db0c6]">
                 <Loader2 size={12} className="animate-spin" />
-                Rendering pages {pdfBusy.done}
-                {pdfBusy.total ? ` / ${pdfBusy.total}` : ""}
+                Opening the PDF…
               </p>
             )}
-            {!pdfBusy && pages.length > 0 && (
-              <p className="mt-3 text-[11px] text-[#7f93aa]">
-                {pdfName} — {pages.length} pages on {Math.ceil(pages.length / 2)} leaves
+            {pdfError && (
+              <p className="mt-3 text-[11px] text-[#e2a2a2]" role="alert">
+                {pdfError}
+              </p>
+            )}
+            {!pdfBusy && source && (
+              <p className="mt-3 text-[11px] leading-relaxed text-[#7f93aa]">
+                {source.title} — {source.pageCount} pages
+                {source.truncated ? ` (first ${source.pageCount} shown)` : ""}
+                <br />
+                Click the book to open it, then tap a half, drag a page edge, or use the arrow keys
+                to turn pages.
               </p>
             )}
           </div>
