@@ -85,6 +85,7 @@ function PageStack({
         map: texture,
         roughness: 0.94,
         metalness: 0,
+        side: side < 0 ? THREE.BackSide : THREE.FrontSide,
         polygonOffset: true,
         polygonOffsetFactor: -1,
       }),
@@ -107,7 +108,7 @@ function PageStack({
         name={`${name}Page`}
         geometry={faceGeometry}
         material={faceMaterial}
-        position-z={thickness / 2 + 0.002}
+        position-z={side < 0 ? -thickness / 2 - 0.002 : thickness / 2 + 0.002}
         onPointerDown={onPointerDown as never}
         castShadow
         receiveShadow
