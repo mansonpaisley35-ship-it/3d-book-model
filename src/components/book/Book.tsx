@@ -618,6 +618,7 @@ export function Book({
         <planeGeometry args={[Math.min(0.3, m.T * 0.7), Math.min(0.3, m.T * 0.7)]} />
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>
+      </group>
     </group>
   );
 }
