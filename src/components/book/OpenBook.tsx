@@ -113,6 +113,8 @@ export function OpenBook({
   width,
   height,
   thickness,
+  caseHalf,
+  board,
   source,
   motion,
   spread,
@@ -126,6 +128,10 @@ export function OpenBook({
   width: number;
   height: number;
   thickness: number;
+  /** half the closed case thickness — the plane the covers fold about */
+  caseHalf: number;
+  /** board thickness, so a stack can rest on top of its cover */
+  board: number;
   source: PdfBookSource;
   motion: React.MutableRefObject<BookMotion>;
   spread: number;
@@ -212,8 +218,11 @@ export function OpenBook({
     bend(parts.bones, side, open, 0);
     const halfT = side < 0 ? leftT : rightT;
     const root = parts.bones[0]!;
-    // as the book opens, each stack lifts off the mid-plane onto its own cover
-    root.position.z = -side * (thickness / 2 - halfT / 2) * open;
+    /* Each stack ends up resting on the inner face of its own cover: the front
+     * board folds about z = caseHalf, so once open it lies just above it. */
+    const rest =
+      side < 0 ? caseHalf + board + halfT / 2 : -caseHalf + board + halfT / 2;
+    root.position.z = rest * open;
     root.rotation.y += side < 0 ? -Math.PI * open : 0;
   };
 

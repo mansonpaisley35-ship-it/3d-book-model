@@ -569,6 +569,8 @@ export function Book({
               width={m.pw}
               height={m.ph}
               thickness={m.pt}
+              caseHalf={m.T / 2}
+              board={c.boardThickness}
               source={source}
               motion={reading.motion}
               spread={reading.spread}
