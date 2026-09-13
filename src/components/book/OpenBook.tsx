@@ -134,7 +134,7 @@ export function OpenBook({
   releaseDrag: () => void;
 }) {
   // bumped whenever a page finishes rendering, so its texture gets picked up
-  const [, bump] = useState(0);
+  const [rev, bump] = useState(0);
   const ready = () => bump((v) => v + 1);
 
   const page = (index: number) => source.getTexture(index, ready);
@@ -161,12 +161,12 @@ export function OpenBook({
   const leftMats = useMemo(
     () => faces(null, page(leftVisible)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [leftVisible, paper, source, bump],
+    [leftVisible, paper, source, rev],
   );
   const rightMats = useMemo(
     () => faces(page(rightVisible), null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rightVisible, paper, source, bump],
+    [rightVisible, paper, source, rev],
   );
   const turnMats = useMemo(
     () =>
@@ -174,7 +174,7 @@ export function OpenBook({
         ? faces(page(2 * k + 2), page(2 * k + 3))
         : faces(page(2 * k), page(2 * k + 1)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [turnDir, k, paper, source, bump],
+    [turnDir, k, paper, source, rev],
   );
 
   // how much of the block sits on the left, from the spread we are showing
@@ -249,7 +249,7 @@ export function OpenBook({
   return (
     <group>
       {/* left half */}
-      <group position={[0, 0, -leftT / 2 - minT]}>
+      <group position={[0, 0, leftT / 2 + minT]}>
         <FlexLeaf
           w={width}
           h={height}
