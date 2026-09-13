@@ -451,7 +451,6 @@ export function Book({
   const recentre = useRef<THREE.Group>(null);
   const closedBlock = useRef<THREE.Group>(null);
   const openBlock = useRef<THREE.Group>(null);
-  const probed = useRef(false);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
   const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
@@ -475,25 +474,6 @@ export function Book({
     // an open book is twice as wide, so pull it back into frame
     const s = 1 - 0.44 * open;
     group.current.scale.setScalar(s);
-    if (open > 0.97 && !probed.current) {
-      probed.current = true;
-      console.log("PROBE metrics jointX", joint(c).jointX, "W", m.W, "T", m.T, "pageCX", m.pageCX, "pw", m.pw, "pt", m.pt);
-      console.log("PROBE state open", open, "cover?", !!frontCover.current, frontCover.current?.rotation.y, "recentre", recentre.current?.position.x, "scale", group.current.scale.x);
-      group.current.traverse((o) => {
-        const sk = o as THREE.SkinnedMesh;
-        if (sk.isSkinnedMesh) {
-          const bones = sk.skeleton.bones;
-          const a = new THREE.Vector3();
-          const z = new THREE.Vector3();
-          bones[0]!.getWorldPosition(a);
-          bones[bones.length - 1]!.getWorldPosition(z);
-          console.log("PROBE skin", o.name, a.toArray().map((n) => +n.toFixed(2)), z.toArray().map((n) => +n.toFixed(2)));
-        } else if ((o as THREE.Mesh).isMesh) {
-          const b = new THREE.Box3().setFromObject(o);
-          console.log("PROBE", o.name, b.min.toArray().map((n) => +n.toFixed(2)), b.max.toArray().map((n) => +n.toFixed(2)), o.visible);
-        }
-      });
-    }
     if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
     if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
   });
