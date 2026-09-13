@@ -467,6 +467,9 @@ export function Book({
     if (frontCover.current) frontCover.current.rotation.y = -Math.PI * open;
     // ...and the whole book slides back to stay centred as it opens out
     if (recentre.current) recentre.current.position.x = (m.W / 2) * open;
+    // an open book is twice as wide, so pull it back into frame
+    const s = 1 - 0.44 * open;
+    group.current.scale.setScalar(s);
     if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
     if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
   });
