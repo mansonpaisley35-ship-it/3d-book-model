@@ -8,9 +8,12 @@ import {
   makeStampMap,
   drawQuill,
 } from "./textures";
-import { PageBlock } from "./PageBlock";
-import type { PdfPage } from "./pdf";
+import { OpenBook } from "./OpenBook";
+import type { useBookMotion } from "./book-state";
+import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
+
+export type Reading = ReturnType<typeof useBookMotion>;
 
 export type BookImages = {
   front?: string;
@@ -316,14 +319,18 @@ export function Book({
   autoRotate = true,
   images = {},
   adjusts = {},
-  pages = [],
+  source = null,
+  reading,
   config = DEFAULT_CONFIG,
   onEdit,
 }: {
   autoRotate?: boolean;
   images?: BookImages;
   adjusts?: BookAdjusts;
-  pages?: PdfPage[];
+  /** an imported PDF, whose own pages become the pages of the book */
+  source?: PdfBookSource | null;
+  /** opening / page-turning state, owned by the scene */
+  reading?: Reading;
   config?: BookConfig;
   onEdit?: (slot: keyof BookImages) => void;
 }) {
@@ -439,11 +446,32 @@ export function Book({
     ];
   }, [pageSideMaterial, pageEdgeMap, edgeTex, c.edgeColor, c.pageEdgeVariation, rounded]);
 
+  /* -------------------- opening & page turning -------------------- */
+  const frontCover = useRef<THREE.Group>(null);
+  const recentre = useRef<THREE.Group>(null);
+  const closedBlock = useRef<THREE.Group>(null);
+  const openBlock = useRef<THREE.Group>(null);
+
+  // pages 1 and N are the covers, so the interior makes this many spreads
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+
   useFrame((state, dt) => {
     if (!group.current) return;
     if (autoRotate) group.current.rotation.y += dt * 0.16;
     // gentle float so the highlights travel across the cloth
     group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
+
+    reading?.step(dt);
+    const open = reading?.motion.current.open ?? 0;
+    // the front board swings about its own joint, on the front face
+    if (frontCover.current) frontCover.current.rotation.y = -Math.PI * open;
+    // ...and the whole book slides back to stay centred as it opens out
+    if (recentre.current) recentre.current.position.x = (m.W / 2) * open;
+    // an open book is twice as wide, so pull it back into frame
+    const s = 1 - 0.44 * open;
+    group.current.scale.setScalar(s);
+    if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
+    if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
   });
 
   const quillProps = {
@@ -457,41 +485,95 @@ export function Book({
   const artProps = { roughness: 0.7, metalness: 0 } as const;
   const quillSize = Math.min(0.4, m.W * 0.12);
 
+  /** Clicking the case opens or closes an imported book. */
+  const toggle = (e: { stopPropagation: () => void }) => {
+    if (!source) return;
+    e.stopPropagation();
+    reading?.toggleOpen();
+  };
+
   return (
     <group ref={group}>
-      {/* front board */}
-      <mesh geometry={boardGeo} material={boardMaterial} castShadow receiveShadow />
-      {/* back board — same plate, flipped, so its joint groove matches the front */}
-      <mesh
-        geometry={boardGeo}
-        material={boardMaterial}
-        rotation={[Math.PI, 0, 0]}
-        castShadow
-        receiveShadow
-      />
-      {/* spine / edge bridge */}
-      <mesh geometry={spineGeo} material={spineMaterial} castShadow receiveShadow />
+      <group ref={recentre}>
+        {/* front board + its artwork and quill, hinged at the joint so the whole
+         * cover swings open together */}
+        <group position={[joint(c).jointX, 0, m.T / 2]}>
+          <group ref={frontCover}>
+            <group position={[-joint(c).jointX, 0, -m.T / 2]}>
+              <mesh
+                geometry={boardGeo}
+                material={boardMaterial}
+                castShadow
+                receiveShadow
+                onClick={toggle}
+              />
+              {/* front cover artwork — stops short of the joint groove */}
+              {frontTex && (
+                <mesh position={[m.panelCX, 0, m.T / 2 + 0.004]}>
+                  <planeGeometry args={[m.panelW, m.panelH]} />
+                  <meshStandardMaterial map={frontTex} {...artProps} />
+                </mesh>
+              )}
+              {/* quill = edit button, front cover, near the fore-edge corner */}
+              <mesh
+                position={[m.W / 2 - quillSize * 0.9, -m.H / 2 + quillSize * 1.05, m.T / 2 + 0.012]}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit?.("front");
+                }}
+                onPointerOver={() => (document.body.style.cursor = "pointer")}
+                onPointerOut={() => (document.body.style.cursor = "auto")}
+              >
+                <planeGeometry args={[quillSize, quillSize]} />
+                <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} />
+              </mesh>
+            </group>
+          </group>
+        </group>
 
-      {/* text block, inset by the page margins. With a PDF imported it becomes
-       * a stack of real leaves, each hinged at the spine. */}
-      <group position={[m.pageCX, m.pageCY, 0]}>
-        <PageBlock
-          width={m.pw}
-          height={m.ph}
-          thickness={m.pt}
-          pages={pages}
-          paperColor={c.pageColor}
-          fillGeometry={pageGeo}
-          fillMaterials={pageMaterials}
+        {/* back board — same plate, flipped, so its joint groove matches the front */}
+        <mesh
+          geometry={boardGeo}
+          material={boardMaterial}
+          rotation={[Math.PI, 0, 0]}
+          castShadow
+          receiveShadow
+          onClick={toggle}
         />
-      </group>
-      {/* front cover artwork — stops short of the joint groove */}
-      {frontTex && (
-        <mesh position={[m.panelCX, 0, m.T / 2 + 0.004]}>
-          <planeGeometry args={[m.panelW, m.panelH]} />
-          <meshStandardMaterial map={frontTex} {...artProps} />
-        </mesh>
-      )}
+        {/* spine / edge bridge */}
+        <mesh
+          geometry={spineGeo}
+          material={spineMaterial}
+          castShadow
+          receiveShadow
+          onClick={toggle}
+        />
+
+        {/* text block, inset by the page margins */}
+        <group position={[m.pageCX, m.pageCY, 0]} ref={closedBlock}>
+          <mesh geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
+        </group>
+
+        {/* with a PDF imported, the block becomes two bendable halves and the
+         * leaf that is turning, hinged on the spine */}
+        <group position={[m.pageCX - m.pw / 2, m.pageCY, 0]} ref={openBlock} visible={false}>
+          {source && reading && (
+            <OpenBook
+              width={m.pw}
+              height={m.ph}
+              thickness={m.pt}
+              source={source}
+              motion={reading.motion}
+              spread={reading.spread}
+              spreadCount={spreadCount}
+              turnDir={reading.turnDir}
+              paperColor={c.pageColor}
+              onTurn={reading.turn}
+              setDrag={reading.setDrag}
+              releaseDrag={reading.releaseDrag}
+            />
+          )}
+        </group>
 
       {/* back cover artwork */}
       {backTex && (
@@ -509,19 +591,6 @@ export function Book({
         </mesh>
       )}
 
-      {/* quill = edit button, front cover, near the fore-edge corner */}
-      <mesh
-        position={[m.W / 2 - quillSize * 0.9, -m.H / 2 + quillSize * 1.05, m.T / 2 + 0.012]}
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit?.("front");
-        }}
-        onPointerOver={() => (document.body.style.cursor = "pointer")}
-        onPointerOut={() => (document.body.style.cursor = "auto")}
-      >
-        <planeGeometry args={[quillSize, quillSize]} />
-        <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} />
-      </mesh>
 
       {/* quill = edit button, back cover, mirrored to its own fore-edge corner */}
       <mesh
@@ -552,6 +621,7 @@ export function Book({
         <planeGeometry args={[Math.min(0.3, m.T * 0.7), Math.min(0.3, m.T * 0.7)]} />
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>
+      </group>
     </group>
   );
 }

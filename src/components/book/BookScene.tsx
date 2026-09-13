@@ -32,7 +32,8 @@ import {
   type PaperKey,
   type TrimKey,
 } from "./config";
-import { disposePdfPages, type PdfPage } from "./pdf";
+import { useBookMotion } from "./book-state";
+import { PdfBookSource } from "./pdf-source";
 
 const VIEWS = {
   cover: new THREE.Vector3(4.2, 1.9, 10.6),
@@ -298,9 +299,13 @@ export default function BookScene() {
   const [editing, setEditing] = useState(false);
   const [building, setBuilding] = useState(false);
   const [openSlot, setOpenSlot] = useState<keyof BookImages>("front");
-  const [pages, setPages] = useState<PdfPage[]>([]);
-  const [pdfName, setPdfName] = useState<string | null>(null);
-  const [pdfBusy, setPdfBusy] = useState<{ done: number; total: number } | null>(null);
+  const [source, setSource] = useState<PdfBookSource | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  // pages 1 and N are the covers, so the interior makes this many spreads
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  const reading = useBookMotion(spreadCount, !!source);
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
   const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
@@ -330,30 +335,26 @@ export default function BookScene() {
 
   const importPdf = async (file?: File | null) => {
     if (!file) return;
-    setPdfBusy({ done: 0, total: 0 });
+    setPdfBusy(true);
+    setPdfError(null);
     try {
-      const { renderPdfPages } = await import("./pdf");
-      const rendered = await renderPdfPages(file, {
-        onProgress: (done, total) => setPdfBusy({ done, total }),
+      const next = await PdfBookSource.load(file);
+      setSource((prev) => {
+        prev?.dispose();
+        return next;
       });
-      setPages((prev) => {
-        disposePdfPages(prev);
-        return rendered;
-      });
-      setPdfName(file.name);
     } catch (err) {
-      console.error("PDF import failed", err);
+      setPdfError(err instanceof Error ? err.message : "That PDF could not be imported");
     } finally {
-      setPdfBusy(null);
+      setPdfBusy(false);
     }
   };
 
   const clearPdf = () => {
-    setPages((prev) => {
-      disposePdfPages(prev);
-      return [];
+    setSource((prev) => {
+      prev?.dispose();
+      return null;
     });
-    setPdfName(null);
   };
 
   const pick = (v: ViewKey) => {
@@ -434,7 +435,8 @@ export default function BookScene() {
               autoRotate={false}
               images={images}
               adjusts={adjusts}
-              pages={pages}
+              source={source}
+              reading={reading}
               config={config}
               onEdit={(slot) => openEditor(slot)}
             />
@@ -854,7 +856,7 @@ export default function BookScene() {
 
             <div className="mt-3 flex items-center gap-2">
               <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
-                {pages.length ? "Replace PDF" : "Import PDF"}
+                {source ? "Replace PDF" : "Import PDF"}
                 <input
                   type="file"
                   accept="application/pdf"
@@ -862,7 +864,7 @@ export default function BookScene() {
                   onChange={(e) => void importPdf(e.target.files?.[0])}
                 />
               </label>
-              {pages.length > 0 && (
+              {source && (
                 <button onClick={clearPdf} className={chipClass}>
                   Remove
                 </button>
@@ -872,13 +874,21 @@ export default function BookScene() {
             {pdfBusy && (
               <p className="mt-3 flex items-center gap-2 text-[11px] text-[#9db0c6]">
                 <Loader2 size={12} className="animate-spin" />
-                Rendering pages {pdfBusy.done}
-                {pdfBusy.total ? ` / ${pdfBusy.total}` : ""}
+                Opening the PDF…
               </p>
             )}
-            {!pdfBusy && pages.length > 0 && (
-              <p className="mt-3 text-[11px] text-[#7f93aa]">
-                {pdfName} — {pages.length} pages on {Math.ceil(pages.length / 2)} leaves
+            {pdfError && (
+              <p className="mt-3 text-[11px] text-[#e2a2a2]" role="alert">
+                {pdfError}
+              </p>
+            )}
+            {!pdfBusy && source && (
+              <p className="mt-3 text-[11px] leading-relaxed text-[#7f93aa]">
+                {source.title} — {source.pageCount} pages
+                {source.truncated ? ` (first ${source.pageCount} shown)` : ""}
+                <br />
+                Click the book to open it, then tap a half, drag a page edge, or use the arrow keys
+                to turn pages.
               </p>
             )}
           </div>
