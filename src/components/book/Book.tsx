@@ -8,9 +8,12 @@ import {
   makeStampMap,
   drawQuill,
 } from "./textures";
-import { PageBlock } from "./PageBlock";
-import type { PdfPage } from "./pdf";
+import { OpenBook } from "./OpenBook";
+import type { useBookMotion } from "./book-state";
+import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
+
+export type Reading = ReturnType<typeof useBookMotion>;
 
 export type BookImages = {
   front?: string;
