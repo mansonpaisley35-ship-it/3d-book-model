@@ -74,6 +74,15 @@ function PageStack({
 }) {
   const stackGeometry = useMemo(() => buildPageStack(width, height, thickness), [width, height, thickness]);
   const faceGeometry = useMemo(() => buildPageFace(width, height), [width, height]);
+  const displayTexture = useMemo(() => {
+    if (!texture || side > 0) return texture;
+    const clone = texture.clone();
+    clone.wrapS = THREE.RepeatWrapping;
+    clone.repeat.x = -1;
+    clone.offset.x = 1;
+    clone.needsUpdate = true;
+    return clone;
+  }, [texture, side]);
   const edgeMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98, metalness: 0 }),
     [paperColor],
@@ -82,23 +91,24 @@ function PageStack({
     () =>
       new THREE.MeshStandardMaterial({
         color: paperColor,
-        map: texture,
+        map: displayTexture,
         roughness: 0.94,
         metalness: 0,
         side: side < 0 ? THREE.BackSide : THREE.FrontSide,
         polygonOffset: true,
         polygonOffsetFactor: -1,
       }),
-    [paperColor, texture],
+    [paperColor, displayTexture],
   );
 
   useEffect(
     () => () => {
       stackGeometry.dispose();
       faceGeometry.dispose();
+      if (displayTexture && displayTexture !== texture) displayTexture.dispose();
       edgeMaterial.dispose();
       faceMaterial.dispose();
-    }, [stackGeometry, faceGeometry, edgeMaterial, faceMaterial],
+    }, [stackGeometry, faceGeometry, displayTexture, texture, edgeMaterial, faceMaterial],
   );
 
   return (
