@@ -32,7 +32,8 @@ import {
   type PaperKey,
   type TrimKey,
 } from "./config";
-import { disposePdfPages, type PdfPage } from "./pdf";
+import { useBookMotion } from "./book-state";
+import { PdfBookSource } from "./pdf-source";
 
 const VIEWS = {
   cover: new THREE.Vector3(4.2, 1.9, 10.6),
@@ -298,9 +299,13 @@ export default function BookScene() {
   const [editing, setEditing] = useState(false);
   const [building, setBuilding] = useState(false);
   const [openSlot, setOpenSlot] = useState<keyof BookImages>("front");
-  const [pages, setPages] = useState<PdfPage[]>([]);
-  const [pdfName, setPdfName] = useState<string | null>(null);
-  const [pdfBusy, setPdfBusy] = useState<{ done: number; total: number } | null>(null);
+  const [source, setSource] = useState<PdfBookSource | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  // pages 1 and N are the covers, so the interior makes this many spreads
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  const reading = useBookMotion(spreadCount, !!source);
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
   const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
@@ -330,30 +335,26 @@ export default function BookScene() {
 
   const importPdf = async (file?: File | null) => {
     if (!file) return;
-    setPdfBusy({ done: 0, total: 0 });
+    setPdfBusy(true);
+    setPdfError(null);
     try {
-      const { renderPdfPages } = await import("./pdf");
-      const rendered = await renderPdfPages(file, {
-        onProgress: (done, total) => setPdfBusy({ done, total }),
+      const next = await PdfBookSource.load(file);
+      setSource((prev) => {
+        prev?.dispose();
+        return next;
       });
-      setPages((prev) => {
-        disposePdfPages(prev);
-        return rendered;
-      });
-      setPdfName(file.name);
     } catch (err) {
-      console.error("PDF import failed", err);
+      setPdfError(err instanceof Error ? err.message : "That PDF could not be imported");
     } finally {
-      setPdfBusy(null);
+      setPdfBusy(false);
     }
   };
 
   const clearPdf = () => {
-    setPages((prev) => {
-      disposePdfPages(prev);
-      return [];
+    setSource((prev) => {
+      prev?.dispose();
+      return null;
     });
-    setPdfName(null);
   };
 
   const pick = (v: ViewKey) => {
