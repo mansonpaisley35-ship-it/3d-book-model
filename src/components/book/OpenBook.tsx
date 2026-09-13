@@ -121,7 +121,7 @@ function TurningPage({
   height,
   thickness,
   z,
-  progress,
+  motion,
   direction,
   materials,
 }: {
@@ -129,7 +129,7 @@ function TurningPage({
   height: number;
   thickness: number;
   z: number;
-  progress: number;
+  motion: React.MutableRefObject<BookMotion>;
   direction: TurnDir;
   materials: THREE.Material[];
 }) {
@@ -145,6 +145,7 @@ function TurningPage({
   useFrame(() => {
     const current = mesh.current;
     if (!current) return;
+    const progress = motion.current.turn;
     const p = direction > 0 ? progress : 1 - progress;
     current.rotation.y = -Math.PI * p;
     const position = geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -299,7 +300,7 @@ export function OpenBook({
           height={height}
           thickness={leafThickness}
           z={turnZ}
-          progress={motion.current.turn}
+          motion={motion}
           direction={turnDir}
           materials={turnMaterials}
         />
