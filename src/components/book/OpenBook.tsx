@@ -147,10 +147,17 @@ function SkinnedTurningPage({
   materials: THREE.Material[];
 }) {
   const host = useRef<THREE.Group>(null);
+  // the rig depends only on the page size: refreshed PDF textures swap the
+  // materials in place instead of rebuilding geometry, bones and skeleton
   const page = useMemo(
     () => createSkinnedPage(width, height, thickness, materials),
-    [width, height, thickness, materials],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [width, height, thickness],
   );
+
+  useEffect(() => {
+    page.mesh.material = materials;
+  }, [page, materials]);
 
   useEffect(() => {
     const group = host.current;
