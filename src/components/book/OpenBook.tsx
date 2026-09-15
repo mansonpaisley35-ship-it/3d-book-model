@@ -3,8 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { BookMotion, TurnDir } from "./book-state";
 import type { PdfBookSource } from "./pdf-source";
-
-const LEAF_SEGMENTS = 24;
+import { createSkinnedPage } from "./skinned-page";
 
 function pageShape(width: number, height: number, radius: number) {
   const r = Math.min(radius, width * 0.08, height * 0.08);
@@ -44,12 +43,6 @@ function buildPageFace(width: number, height: number) {
   return geometry;
 }
 
-function buildTurningLeaf(width: number, height: number, thickness: number) {
-  const geometry = new THREE.BoxGeometry(width, height, thickness, LEAF_SEGMENTS, 1, 1);
-  geometry.translate(width / 2, 0, 0);
-  geometry.computeVertexNormals();
-  return geometry;
-}
 
 function PageStack({
   name,
