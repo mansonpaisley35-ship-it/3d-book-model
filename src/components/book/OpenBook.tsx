@@ -43,7 +43,6 @@ function buildPageFace(width: number, height: number) {
   return geometry;
 }
 
-
 function PageStack({
   name,
   side,
@@ -65,7 +64,10 @@ function PageStack({
   paperColor: string;
   onPointerDown: (e: { nativeEvent: PointerEvent; stopPropagation: () => void }) => void;
 }) {
-  const stackGeometry = useMemo(() => buildPageStack(width, height, thickness), [width, height, thickness]);
+  const stackGeometry = useMemo(
+    () => buildPageStack(width, height, thickness),
+    [width, height, thickness],
+  );
   const faceGeometry = useMemo(() => buildPageFace(width, height), [width, height]);
   const displayTexture = useMemo(() => {
     if (!texture || side > 0) return texture;
@@ -101,7 +103,8 @@ function PageStack({
       if (displayTexture && displayTexture !== texture) displayTexture.dispose();
       edgeMaterial.dispose();
       faceMaterial.dispose();
-    }, [stackGeometry, faceGeometry, displayTexture, texture, edgeMaterial, faceMaterial],
+    },
+    [stackGeometry, faceGeometry, displayTexture, texture, edgeMaterial, faceMaterial],
   );
 
   return (
@@ -182,7 +185,6 @@ function SkinnedTurningPage({
   return <group ref={host} rotation-y={direction === 1 ? 0 : -Math.PI} position-z={zFrom} />;
 }
 
-
 export function OpenBook({
   width,
   height,
@@ -237,8 +239,16 @@ export function OpenBook({
     const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
     const backIndex = turnDir === 1 ? 2 * k + 3 : 2 * k + 1;
     const edge = new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98 });
-    const front = new THREE.MeshStandardMaterial({ color: paperColor, map: page(frontIndex), roughness: 0.94 });
-    const back = new THREE.MeshStandardMaterial({ color: paperColor, map: page(backIndex), roughness: 0.94 });
+    const front = new THREE.MeshStandardMaterial({
+      color: paperColor,
+      map: page(frontIndex),
+      roughness: 0.94,
+    });
+    const back = new THREE.MeshStandardMaterial({
+      color: paperColor,
+      map: page(backIndex),
+      roughness: 0.94,
+    });
     return [edge, edge, edge, edge, front, back];
     // revision intentionally refreshes the materials when a PDF page finishes rendering
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,11 +285,12 @@ export function OpenBook({
     };
   }, [setDrag, releaseDrag]);
 
-  const grab = (dir: TurnDir) => (event: { nativeEvent: PointerEvent; stopPropagation: () => void }) => {
-    event.stopPropagation();
-    if (motion.current.open < 0.85 || !onTurn(dir, true)) return;
-    drag.current = { dir, x0: event.nativeEvent.clientX, moved: false };
-  };
+  const grab =
+    (dir: TurnDir) => (event: { nativeEvent: PointerEvent; stopPropagation: () => void }) => {
+      event.stopPropagation();
+      if (motion.current.open < 0.85 || !onTurn(dir, true)) return;
+      drag.current = { dir, x0: event.nativeEvent.clientX, moved: false };
+    };
 
   return (
     <group>

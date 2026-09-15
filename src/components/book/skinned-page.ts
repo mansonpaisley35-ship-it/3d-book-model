@@ -135,7 +135,8 @@ export function createSkinnedPage(
   let shapeSum = 0;
   for (let i = 0; i < N; i += 1) {
     const u = i / (N - 1);
-    const early = smoothstep(cfg.earlyThreshold, 0, Math.abs(u - cfg.earlyPivot)) * cfg.earlyIntensity;
+    const early =
+      smoothstep(cfg.earlyThreshold, 0, Math.abs(u - cfg.earlyPivot)) * cfg.earlyIntensity;
     const main = smoothstep(cfg.curlThreshold, 0, Math.abs(u - cfg.curlPivot)) * cfg.curlIntensity;
     const late = smoothstep(cfg.lateThreshold, 0, Math.abs(u - cfg.latePivot)) * cfg.lateIntensity;
     spine[i] = smoothstep(cfg.spineZone, 0, u);
