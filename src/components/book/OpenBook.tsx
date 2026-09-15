@@ -3,8 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { BookMotion, TurnDir } from "./book-state";
 import type { PdfBookSource } from "./pdf-source";
-
-const LEAF_SEGMENTS = 24;
+import { createSkinnedPage } from "./skinned-page";
 
 function pageShape(width: number, height: number, radius: number) {
   const r = Math.min(radius, width * 0.08, height * 0.08);
@@ -44,13 +43,6 @@ function buildPageFace(width: number, height: number) {
   return geometry;
 }
 
-function buildTurningLeaf(width: number, height: number, thickness: number) {
-  const geometry = new THREE.BoxGeometry(width, height, thickness, LEAF_SEGMENTS, 1, 1);
-  geometry.translate(width / 2, 0, 0);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 function PageStack({
   name,
   side,
@@ -72,7 +64,10 @@ function PageStack({
   paperColor: string;
   onPointerDown: (e: { nativeEvent: PointerEvent; stopPropagation: () => void }) => void;
 }) {
-  const stackGeometry = useMemo(() => buildPageStack(width, height, thickness), [width, height, thickness]);
+  const stackGeometry = useMemo(
+    () => buildPageStack(width, height, thickness),
+    [width, height, thickness],
+  );
   const faceGeometry = useMemo(() => buildPageFace(width, height), [width, height]);
   const displayTexture = useMemo(() => {
     if (!texture || side > 0) return texture;
@@ -108,7 +103,8 @@ function PageStack({
       if (displayTexture && displayTexture !== texture) displayTexture.dispose();
       edgeMaterial.dispose();
       faceMaterial.dispose();
-    }, [stackGeometry, faceGeometry, displayTexture, texture, edgeMaterial, faceMaterial],
+    },
+    [stackGeometry, faceGeometry, displayTexture, texture, edgeMaterial, faceMaterial],
   );
 
   return (
@@ -127,11 +123,19 @@ function PageStack({
   );
 }
 
-function TurningPage({
+/**
+ * The leaf currently turning: a skinned page whose root bone sits ON the spine,
+ * so it can never separate from the binding. `zFrom`/`zTo` are the resting
+ * planes of the stack it leaves and the stack it lands on; the binding slides
+ * between them across the turn, which is what a real sheet does inside the
+ * spine cavity.
+ */
+function SkinnedTurningPage({
   width,
   height,
   thickness,
-  z,
+  zFrom,
+  zTo,
   motion,
   direction,
   materials,
@@ -139,50 +143,46 @@ function TurningPage({
   width: number;
   height: number;
   thickness: number;
-  z: number;
+  zFrom: number;
+  zTo: number;
   motion: React.MutableRefObject<BookMotion>;
   direction: TurnDir;
   materials: THREE.Material[];
 }) {
-  const mesh = useRef<THREE.Mesh>(null);
-  const geometry = useMemo(() => buildTurningLeaf(width, height, thickness), [width, height, thickness]);
-  const base = useMemo(() => {
-    const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-    return new Float32Array(position.array);
-  }, [geometry]);
+  const host = useRef<THREE.Group>(null);
+  // the rig depends only on the page size: refreshed PDF textures swap the
+  // materials in place instead of rebuilding geometry, bones and skeleton
+  const page = useMemo(
+    () => createSkinnedPage(width, height, thickness, materials),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [width, height, thickness],
+  );
 
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => {
+    page.mesh.material = materials;
+  }, [page, materials]);
+
+  useEffect(() => {
+    const group = host.current;
+    if (!group) return;
+    group.add(page.mesh);
+    return () => {
+      group.remove(page.mesh);
+      page.dispose();
+    };
+  }, [page]);
 
   useFrame(() => {
-    const current = mesh.current;
-    if (!current) return;
-    const progress = motion.current.turn;
-    const p = direction > 0 ? progress : 1 - progress;
-    current.rotation.y = -Math.PI * p;
-    const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-    const curl = Math.sin(Math.PI * progress) * width * 0.075 * direction;
-    for (let i = 0; i < position.count; i += 1) {
-      const x = base[i * 3] ?? 0;
-      const y = base[i * 3 + 1] ?? 0;
-      const originalZ = base[i * 3 + 2] ?? 0;
-      const u = Math.min(1, Math.max(0, x / width));
-      position.setXYZ(i, x, y, originalZ + Math.sin(Math.PI * u) * curl);
-    }
-    position.needsUpdate = true;
-    geometry.computeVertexNormals();
+    const group = host.current;
+    if (!group) return;
+    const p = Math.min(1, Math.max(0, motion.current.turn));
+    page.update(p, direction);
+    group.position.z = zFrom + (zTo - zFrom) * p;
   });
 
-  return (
-    <mesh
-      ref={mesh}
-      name="turningPage"
-      geometry={geometry}
-      material={materials}
-      position-z={z}
-      castShadow
-      receiveShadow
-    />
-  );
+  // a forward leaf starts lying along +X (right half); a backward leaf starts
+  // mirrored onto the left half, and the same bone solver drives both
+  return <group ref={host} rotation-y={direction === 1 ? 0 : -Math.PI} position-z={zFrom} />;
 }
 
 export function OpenBook({
@@ -231,14 +231,24 @@ export function OpenBook({
   const rightBase = -caseHalf + board;
   const leftZ = leftBase + leftThickness / 2;
   const rightZ = rightBase + rightThickness / 2;
-  const turnZ = turnDir === 1 ? rightBase + rightThickness + leafThickness : leftBase + leftThickness + leafThickness;
+  // resting planes of the turning leaf: just clear of each stack's top face
+  const leftRestZ = leftBase + leftThickness + leafThickness;
+  const rightRestZ = rightBase + rightThickness + leafThickness;
 
   const turnMaterials = useMemo(() => {
     const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
     const backIndex = turnDir === 1 ? 2 * k + 3 : 2 * k + 1;
     const edge = new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98 });
-    const front = new THREE.MeshStandardMaterial({ color: paperColor, map: page(frontIndex), roughness: 0.94 });
-    const back = new THREE.MeshStandardMaterial({ color: paperColor, map: page(backIndex), roughness: 0.94 });
+    const front = new THREE.MeshStandardMaterial({
+      color: paperColor,
+      map: page(frontIndex),
+      roughness: 0.94,
+    });
+    const back = new THREE.MeshStandardMaterial({
+      color: paperColor,
+      map: page(backIndex),
+      roughness: 0.94,
+    });
     return [edge, edge, edge, edge, front, back];
     // revision intentionally refreshes the materials when a PDF page finishes rendering
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,11 +285,12 @@ export function OpenBook({
     };
   }, [setDrag, releaseDrag]);
 
-  const grab = (dir: TurnDir) => (event: { nativeEvent: PointerEvent; stopPropagation: () => void }) => {
-    event.stopPropagation();
-    if (motion.current.open < 0.85 || !onTurn(dir, true)) return;
-    drag.current = { dir, x0: event.nativeEvent.clientX, moved: false };
-  };
+  const grab =
+    (dir: TurnDir) => (event: { nativeEvent: PointerEvent; stopPropagation: () => void }) => {
+      event.stopPropagation();
+      if (motion.current.open < 0.85 || !onTurn(dir, true)) return;
+      drag.current = { dir, x0: event.nativeEvent.clientX, moved: false };
+    };
 
   return (
     <group>
@@ -306,11 +317,12 @@ export function OpenBook({
         onPointerDown={grab(1)}
       />
       {turnDir && (
-        <TurningPage
+        <SkinnedTurningPage
           width={width}
           height={height}
           thickness={leafThickness}
-          z={turnZ}
+          zFrom={turnDir === 1 ? rightRestZ : leftRestZ}
+          zTo={turnDir === 1 ? leftRestZ : rightRestZ}
           motion={motion}
           direction={turnDir}
           materials={turnMaterials}
