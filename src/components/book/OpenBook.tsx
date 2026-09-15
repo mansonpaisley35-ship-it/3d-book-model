@@ -222,7 +222,9 @@ export function OpenBook({
   const rightBase = -caseHalf + board;
   const leftZ = leftBase + leftThickness / 2;
   const rightZ = rightBase + rightThickness / 2;
-  const turnZ = turnDir === 1 ? rightBase + rightThickness + leafThickness : leftBase + leftThickness + leafThickness;
+  // resting planes of the turning leaf: just clear of each stack's top face
+  const leftRestZ = leftBase + leftThickness + leafThickness;
+  const rightRestZ = rightBase + rightThickness + leafThickness;
 
   const turnMaterials = useMemo(() => {
     const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
@@ -297,11 +299,12 @@ export function OpenBook({
         onPointerDown={grab(1)}
       />
       {turnDir && (
-        <TurningPage
+        <SkinnedTurningPage
           width={width}
           height={height}
           thickness={leafThickness}
-          z={turnZ}
+          zFrom={turnDir === 1 ? rightRestZ : leftRestZ}
+          zTo={turnDir === 1 ? leftRestZ : rightRestZ}
           motion={motion}
           direction={turnDir}
           materials={turnMaterials}
