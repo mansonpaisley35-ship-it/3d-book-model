@@ -36,27 +36,27 @@ export const PAGE_TURN_CONFIG = {
 
   /** the binding zone, where the sheet curves around the spine */
   spineZone: 0.18,
-  spineCurveIntensity: 0.5,
+  spineCurveIntensity: 0.4,
 
   /** bend region just off the binding */
   earlyPivot: 0.26,
-  earlyThreshold: 0.24,
+  earlyThreshold: 0.42,
   earlyIntensity: 1,
 
   /** the main body of the turn */
   curlPivot: 0.55,
-  curlThreshold: 0.4,
+  curlThreshold: 0.62,
   curlIntensity: 1.35,
 
   /** fore-edge, where the leaf settles flat onto the opposite stack */
   latePivot: 0.85,
-  lateThreshold: 0.3,
+  lateThreshold: 0.5,
   lateIntensity: 0.55,
 
   /** extra mid-turn curl amplitude (faded out at both ends of the turn) */
-  bulge: 0.55,
+  bulge: 0.3,
   /** slight out-of-plane twist so the fore-edge corner lifts */
-  lift: 0.1,
+  lift: 0.06,
 };
 
 export type SkinnedPage = {
