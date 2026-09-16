@@ -88,6 +88,7 @@ export class PdfBookSource {
       this.cache.set(index, cached);
       return cached;
     }
+    console.log('[book] want page', index);
     if (!this.failed.has(index)) void this.render(index, onReady);
     return null;
   }
@@ -122,6 +123,7 @@ export class PdfBookSource {
         this.cache.get(oldest)?.dispose();
         this.cache.delete(oldest);
       }
+      console.log('[book] rendered page', index);
       onReady?.();
     } catch (err) {
       // one unreadable page must never break the book: it simply stays blank
