@@ -323,7 +323,12 @@ export function Book({
   reading,
   config = DEFAULT_CONFIG,
   onEdit,
+  editable = false,
+  onActivate,
 }: {
+  editable?: boolean;
+  /** double tap on the case */
+  onActivate?: () => void;
   autoRotate?: boolean;
   images?: BookImages;
   adjusts?: BookAdjusts;
@@ -493,7 +498,7 @@ export function Book({
   const toggle = (e: { stopPropagation: () => void }) => {
     if (!source) return;
     e.stopPropagation();
-    reading?.toggleOpen();
+    onActivate?.();
   };
 
   return (
@@ -510,7 +515,7 @@ export function Book({
                 material={boardMaterial}
                 castShadow
                 receiveShadow
-                onClick={toggle}
+                onDoubleClick={toggle}
               />
               {/* front cover artwork — stops short of the joint groove */}
               {frontTex && (
@@ -520,7 +525,7 @@ export function Book({
                 </mesh>
               )}
               {/* quill = edit button, front cover, near the fore-edge corner */}
-              <mesh
+              {editable && <mesh
                 position={[m.W / 2 - quillSize * 0.9, -m.H / 2 + quillSize * 1.05, m.T / 2 + 0.012]}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -531,7 +536,7 @@ export function Book({
               >
                 <planeGeometry args={[quillSize, quillSize]} />
                 <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} />
-              </mesh>
+              </mesh>}
             </group>
           </group>
         </group>
@@ -544,7 +549,7 @@ export function Book({
           rotation={[Math.PI, 0, 0]}
           castShadow
           receiveShadow
-          onClick={toggle}
+          onDoubleClick={toggle}
         />
         {/* spine / edge bridge */}
         <mesh
@@ -553,7 +558,7 @@ export function Book({
           material={spineMaterial}
           castShadow
           receiveShadow
-          onClick={toggle}
+          onDoubleClick={toggle}
         />
 
         {/* text block, inset by the page margins */}
@@ -602,7 +607,7 @@ export function Book({
 
 
       {/* quill = edit button, back cover, mirrored to its own fore-edge corner */}
-      <mesh
+      {editable && <mesh
         position={[m.W / 2 - quillSize * 0.9, -m.H / 2 + quillSize * 1.05, -m.T / 2 - 0.012]}
         rotation={[0, Math.PI, 0]}
         onClick={(e) => {
@@ -614,10 +619,10 @@ export function Book({
       >
         <planeGeometry args={[quillSize, quillSize]} />
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
-      </mesh>
+      </mesh>}
 
       {/* quill = edit button, spine foot */}
-      <mesh
+      {editable && <mesh
         position={[m.spineSurf - 0.004, -m.H / 2 + quillSize * 1.15, 0]}
         rotation={[0, -Math.PI / 2, 0]}
         onClick={(e) => {
@@ -629,7 +634,7 @@ export function Book({
       >
         <planeGeometry args={[Math.min(0.3, m.T * 0.7), Math.min(0.3, m.T * 0.7)]} />
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
-      </mesh>
+      </mesh>}
       </group>
     </group>
   );
