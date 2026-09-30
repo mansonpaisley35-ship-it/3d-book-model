@@ -12,7 +12,10 @@ import {
   Loader2,
   RotateCcw,
   Ruler,
+  Settings2,
   Sparkles,
+  Trash2,
+  Library,
   Upload,
   X,
 } from "lucide-react";
@@ -34,6 +37,15 @@ import {
 } from "./config";
 import { useBookMotion } from "./book-state";
 import { PdfBookSource } from "./pdf-source";
+import {
+  LAST_BOOK_KEY,
+  deleteBook,
+  listBooks,
+  saveBook,
+  updateBook,
+  type PoseKey,
+  type StoredBook,
+} from "./library";
 
 const VIEWS = {
   cover: new THREE.Vector3(4.2, 1.9, 10.6),
@@ -291,6 +303,125 @@ function CameraRig({ view, active, dist }: { view: ViewKey; active: boolean; dis
   return null;
 }
 
+const eul = (x: number, y: number, z = 0) =>
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+
+const POSES: { key: PoseKey; label: string; lying: boolean; q: () => THREE.Quaternion }[] = [
+  { key: "front", label: "Front cover", lying: false, q: () => new THREE.Quaternion() },
+  { key: "threeQuarter", label: "Three-quarter", lying: false, q: () => eul(0, 0.55) },
+  { key: "back", label: "Back cover", lying: false, q: () => eul(0, Math.PI) },
+  { key: "spineStanding", label: "Spine first, standing", lying: false, q: () => eul(0, Math.PI / 2) },
+  { key: "foreEdge", label: "Fore-edge first", lying: false, q: () => eul(0, -Math.PI / 2) },
+  { key: "lyingFlat", label: "Lying flat, cover up", lying: true, q: () => eul(-Math.PI / 2, 0) },
+  { key: "lyingBack", label: "Lying flat, back up", lying: true, q: () => eul(Math.PI / 2, 0, Math.PI) },
+  {
+    key: "spineLying",
+    label: "Spine first, lying down",
+    lying: true,
+    q: () => eul(0, Math.PI / 2).multiply(eul(-Math.PI / 2, 0)),
+  },
+];
+
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/**
+ * Moves the book between poses with a lifted, eased arc (picked up, turned,
+ * set down) and spins it on a turntable while auto-spin is on.
+ */
+function PoseRig({
+  pose,
+  lyingDrop,
+  spin,
+  settle,
+  children,
+}: {
+  pose: PoseKey;
+  lyingDrop: number;
+  spin: boolean;
+  settle: React.MutableRefObject<(() => void) | null>;
+  children: React.ReactNode;
+}) {
+  const spinGroup = useRef<THREE.Group>(null);
+  const poseGroup = useRef<THREE.Group>(null);
+  const tween = useRef({
+    from: new THREE.Quaternion(),
+    to: new THREE.Quaternion(),
+    fromY: 0,
+    toY: 0,
+    t: 1,
+    init: false,
+  });
+
+  useEffect(() => {
+    const g = poseGroup.current;
+    const def = POSES.find((p) => p.key === pose) ?? POSES[0];
+    const tw = tween.current;
+    const toY = def.lying ? -lyingDrop : 0;
+    if (!g || !tw.init) {
+      tw.to.copy(def.q());
+      tw.from.copy(tw.to);
+      tw.fromY = tw.toY = toY;
+      tw.t = 1;
+      tw.init = !!g;
+      if (g) {
+        g.quaternion.copy(tw.to);
+        g.position.y = toY;
+      }
+      return;
+    }
+    tw.from.copy(g.quaternion);
+    tw.fromY = g.position.y;
+    tw.to.copy(def.q());
+    tw.toY = toY;
+    tw.t = tw.from.angleTo(tw.to) < 0.001 && Math.abs(tw.fromY - toY) < 0.001 ? 1 : 0;
+  }, [pose, lyingDrop]);
+
+  useFrame((_, dt) => {
+    const g = poseGroup.current;
+    const s = spinGroup.current;
+    const tw = tween.current;
+    if (s) {
+      if (spin) s.rotation.y += dt * 0.45;
+      else {
+        const a = ((((s.rotation.y + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+        s.rotation.y = a * Math.max(0, 1 - dt * 3.5);
+      }
+    }
+    if (!g) return;
+    if (!tw.init) {
+      g.quaternion.copy(tw.to);
+      g.position.y = tw.toY;
+      tw.init = true;
+    }
+    if (tw.t < 1) {
+      tw.t = Math.min(1, tw.t + dt / 1.25);
+      const e = easeInOut(tw.t);
+      g.quaternion.slerpQuaternions(tw.from, tw.to, e);
+      const arc = tw.from.angleTo(tw.to) > 0.01 ? Math.sin(Math.PI * e) * 0.9 : 0;
+      g.position.y = tw.fromY + (tw.toY - tw.fromY) * e + arc;
+    }
+    const spun = s ? Math.abs(s.rotation.y) < 0.01 : true;
+    if (tw.t >= 1 && spun && settle.current) {
+      const fn = settle.current;
+      settle.current = null;
+      fn();
+    }
+  });
+
+  return (
+    <group ref={spinGroup}>
+      <group ref={poseGroup}>{children}</group>
+    </group>
+  );
+}
+
+function blobUrls(covers: StoredBook["covers"]): BookImages {
+  const out: BookImages = {};
+  for (const [k, b] of Object.entries(covers ?? {}))
+    if (b) out[k as keyof BookImages] = URL.createObjectURL(b);
+  return out;
+}
+
 export default function BookScene() {
   const [free, setFree] = useState(false);
   const [view, setView] = useState<ViewKey>("cover");
@@ -303,13 +434,144 @@ export default function BookScene() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
+  /* ---- library & modes ---- */
+  const [books, setBooks] = useState<StoredBook[]>([]);
+  const [bookId, setBookId] = useState<string | null>(null);
+  const [libraryReady, setLibraryReady] = useState(false);
+  const [configuring, setConfiguring] = useState(false);
+  const [pose, setPose] = useState<PoseKey>("front");
+  const [displayPose, setDisplayPose] = useState<PoseKey>("front");
+  const [autoSpin, setAutoSpin] = useState(false);
+  const [orbit, setOrbit] = useState(true);
+  const [importOpen, setImportOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [draft, setDraft] = useState<{ pdf?: File } & Partial<Record<keyof BookImages, File>>>({});
+  const settle = useRef<(() => void) | null>(null);
+  const loadedRef = useRef<string | null>(null);
+
   // pages 1 and N are the covers, so the interior makes this many spreads
   const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
-  const reading = useBookMotion(spreadCount, !!source);
+  const reading = useBookMotion(spreadCount, !!source && !configuring);
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
   const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
   const [copied, setCopied] = useState(false);
+
+  /** Put a stored book on the stage, with its own saved look and pose. */
+  const presentBook = async (rec: StoredBook) => {
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      const next = await PdfBookSource.load(
+        new File([rec.pdf], `${rec.title}.pdf`, { type: "application/pdf" }),
+      );
+      loadedRef.current = null;
+      setSource((prev) => {
+        prev?.dispose();
+        return next;
+      });
+      setImages((prev) => {
+        Object.values(prev).forEach((u) => u && URL.revokeObjectURL(u));
+        return blobUrls(rec.covers);
+      });
+      setAdjusts(rec.adjusts ?? {});
+      setConfig(migrateConfig(rec.config));
+      setAspects(rec.aspects ?? DEFAULT_ASPECTS);
+      setPose(rec.pose ?? "front");
+      setDisplayPose(rec.pose ?? "front");
+      setAutoSpin(!!rec.autoSpin);
+      setOrbit(rec.orbit ?? true);
+      setBookId(rec.id);
+      loadedRef.current = rec.id;
+      localStorage.setItem(LAST_BOOK_KEY, rec.id);
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "That book could not be opened");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await listBooks();
+        setBooks(all);
+        const last = localStorage.getItem(LAST_BOOK_KEY);
+        const rec = all.find((b) => b.id === last) ?? all[0];
+        if (rec) await presentBook(rec);
+      } catch (err) {
+        console.error("Could not read the library", err);
+      } finally {
+        setLibraryReady(true);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // every change to the look is saved to this book
+  useEffect(() => {
+    if (!bookId || loadedRef.current !== bookId) return;
+    const id = bookId;
+    const h = setTimeout(() => {
+      const patch = { config, aspects, adjusts, pose, autoSpin, orbit };
+      void updateBook(id, patch);
+      setBooks((list) => list.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    }, 350);
+    return () => clearTimeout(h);
+  }, [bookId, config, aspects, adjusts, pose, autoSpin, orbit]);
+
+  const importBook = async () => {
+    if (!draft.pdf) return;
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      const probe = await PdfBookSource.load(draft.pdf);
+      const pageCount = probe.pageCount;
+      const title = probe.title;
+      probe.dispose();
+      const a = { ...DEFAULT_ASPECTS, pageCount: Math.max(48, Math.min(900, pageCount)) };
+      const covers: StoredBook["covers"] = {};
+      for (const s of ["front", "back", "spine", "edges"] as const) if (draft[s]) covers[s] = draft[s];
+      const rec: StoredBook = {
+        id: crypto.randomUUID(),
+        title,
+        pageCount,
+        createdAt: Date.now(),
+        pdf: draft.pdf,
+        covers,
+        adjusts: {},
+        config: suggestConfig(a),
+        aspects: a,
+        pose: "front",
+        autoSpin: false,
+        orbit: true,
+      };
+      await saveBook(rec);
+      setBooks((list) => [rec, ...list]);
+      setImportOpen(false);
+      setDraft({});
+      await presentBook(rec);
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "That PDF could not be imported");
+      setPdfBusy(false);
+    }
+  };
+
+  const removeBook = async (id: string) => {
+    await deleteBook(id);
+    const rest = books.filter((b) => b.id !== id);
+    setBooks(rest);
+    if (id === bookId) {
+      setBookId(null);
+      loadedRef.current = null;
+      setSource((prev) => {
+        prev?.dispose();
+        return null;
+      });
+      setConfiguring(false);
+      if (rest[0]) await presentBook(rest[0]);
+    }
+  };
 
   /** Re-open a previously saved design file. */
   const loadDesign = async (file?: File | null) => {
@@ -333,30 +595,6 @@ export default function BookScene() {
 
   const patchConfig = (patch: Partial<BookConfig>) => setConfig((prev) => ({ ...prev, ...patch }));
 
-  const importPdf = async (file?: File | null) => {
-    if (!file) return;
-    setPdfBusy(true);
-    setPdfError(null);
-    try {
-      const next = await PdfBookSource.load(file);
-      setSource((prev) => {
-        prev?.dispose();
-        return next;
-      });
-    } catch (err) {
-      setPdfError(err instanceof Error ? err.message : "That PDF could not be imported");
-    } finally {
-      setPdfBusy(false);
-    }
-  };
-
-  const clearPdf = () => {
-    setSource((prev) => {
-      prev?.dispose();
-      return null;
-    });
-  };
-
   const pick = (v: ViewKey) => {
     setView(v);
     setFree(false);
@@ -370,6 +608,12 @@ export default function BookScene() {
       return { ...prev, [key]: url };
     });
     setAdjusts((prev) => ({ ...prev, [key]: { ...DEFAULT_ADJUST } }));
+    const rec = books.find((b) => b.id === bookId);
+    if (rec) {
+      const covers = { ...rec.covers, [key]: file };
+      void updateBook(rec.id, { covers });
+      setBooks((list) => list.map((b) => (b.id === rec.id ? { ...b, covers } : b)));
+    }
   };
 
   const clearImage = (key: keyof BookImages) => {
@@ -384,6 +628,13 @@ export default function BookScene() {
       delete next[key];
       return next;
     });
+    const rec = books.find((b) => b.id === bookId);
+    if (rec) {
+      const covers = { ...rec.covers };
+      delete covers[key];
+      void updateBook(rec.id, { covers });
+      setBooks((list) => list.map((b) => (b.id === rec.id ? { ...b, covers } : b)));
+    }
   };
 
   const patchAdjust = (key: keyof BookImages, patch: Partial<ImageAdjust>) =>
@@ -395,11 +646,47 @@ export default function BookScene() {
     setEditing(true);
   };
 
+  const enterConfigure = () => {
+    if (reading.open) reading.toggleOpen();
+    settle.current = null;
+    setDisplayPose(pose);
+    setConfiguring(true);
+  };
+
+  const exitConfigure = () => {
+    setConfiguring(false);
+    setEditing(false);
+    setBuilding(false);
+    setFree(false);
+    setView("cover");
+  };
+
+  const choosePose = (p: PoseKey) => {
+    setPose(p);
+    setDisplayPose(p);
+  };
+
+  /** Double tap: stand the book up facing the reader, then open (or close) it. */
+  const activate = () => {
+    if (configuring || !source) return;
+    if (reading.open) {
+      reading.toggleOpen();
+      return;
+    }
+    setFree(false);
+    setView("cover");
+    settle.current = () => reading.toggleOpen();
+    setDisplayPose("front");
+  };
+
   // keep the book comfortably framed whatever size it is built at
   const fit = useMemo(() => {
     const span = Math.max(config.bookHeight, config.bookWidth * 1.25);
     return { scale: (0.76 * 5.0) / span, dist: Math.max(0.85, span / 5.0) };
   }, [config.bookHeight, config.bookWidth]);
+
+  const lyingDrop =
+    config.bookHeight / 2 - (config.pageBlockThickness + config.boardThickness * 2) / 2;
 
   const key = useMemo(() => {
     const az = (config.keyAzimuth * Math.PI) / 180;
@@ -416,30 +703,43 @@ export default function BookScene() {
     "pointer-events-auto absolute inset-y-0 right-0 z-20 w-full max-w-sm overflow-y-auto border-l border-white/10 bg-[#0e1319]/95 p-6 backdrop-blur-xl";
   const chipClass =
     "rounded-full border border-white/10 px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#9db0c6] uppercase hover:text-[#e8eef5]";
+  const pillClass =
+    "flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10";
+  const current = books.find((b) => b.id === bookId);
 
   return (
     <div className="relative h-full w-full">
+      {source && (
       <Canvas
         shadows={config.shadows}
         dpr={[1, 2]}
         camera={{ position: [4.2, 1.9, 10.6], fov: 30 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
-        onPointerDown={() => setFree(true)}
+        onPointerDown={() => configuring && orbit && setFree(true)}
       >
         <color attach="background" args={["#0e1319"]} />
         <fog attach="fog" args={["#0e1319", 16, 30]} />
 
         <Suspense fallback={null}>
           <group position={[0, 0.15, 0]} scale={fit.scale}>
-            <Book
-              autoRotate={false}
-              images={images}
-              adjusts={adjusts}
-              source={source}
-              reading={reading}
-              config={config}
-              onEdit={(slot) => openEditor(slot)}
-            />
+            <PoseRig
+              pose={configuring ? pose : displayPose}
+              lyingDrop={lyingDrop}
+              spin={configuring && autoSpin}
+              settle={settle}
+            >
+              <Book
+                autoRotate={false}
+                images={images}
+                adjusts={adjusts}
+                source={source}
+                reading={reading}
+                config={config}
+                editable={configuring}
+                onActivate={activate}
+                onEdit={(slot) => configuring && openEditor(slot)}
+              />
+            </PoseRig>
           </group>
 
           {/* soft studio setup: broad key light, cool rim from behind */}
@@ -506,9 +806,9 @@ export default function BookScene() {
           )}
         </Suspense>
 
-        <CameraRig view={view} active={!free} dist={fit.dist} />
+        <CameraRig view={configuring ? view : "cover"} active={!free} dist={fit.dist} />
         <OrbitControls
-          enabled={free}
+          enabled={configuring && orbit && free}
           enablePan={false}
           minDistance={5}
           maxDistance={22}
@@ -518,47 +818,260 @@ export default function BookScene() {
           dampingFactor={0.06}
         />
       </Canvas>
+      )}
 
-      <div className="pointer-events-auto absolute bottom-6 left-1/2 flex -translate-x-1/2 gap-1 rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-md">
-        {(
-          [
-            ["cover", "Cover"],
-            ["spine", "Spine"],
-            ["head", "Head"],
-            ["edge", "Fore-edge"],
-          ] as [ViewKey, string][]
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => pick(k)}
-            className={`rounded-full px-4 py-1.5 text-[11px] tracking-[0.14em] uppercase transition-colors ${
-              view === k && !free
-                ? "bg-[#e8eef5] text-[#101720]"
-                : "text-[#9db0c6] hover:text-[#e8eef5]"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      {!source && libraryReady && !pdfBusy && (
+        <div className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center">
+          <div className="text-center">
+            <p className="font-serif text-2xl text-[#e8eef5]">No book on the shelf yet</p>
+            <p className="mt-2 text-sm text-[#8fa3ba]">Import a PDF and it becomes a real book.</p>
+            <button
+              onClick={() => setImportOpen(true)}
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#e8eef5] px-5 py-2.5 text-[11px] tracking-[0.16em] text-[#101720] uppercase"
+            >
+              <Upload size={13} /> Import a book
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pdfBusy && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <p className="flex items-center gap-2 text-sm text-[#9db0c6]">
+            <Loader2 size={14} className="animate-spin" /> Opening the book…
+          </p>
+        </div>
+      )}
+
+      {configuring && source && (
+        <div className="pointer-events-auto absolute bottom-6 left-1/2 flex -translate-x-1/2 gap-1 rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-md">
+          {(
+            [
+              ["cover", "Cover"],
+              ["spine", "Spine"],
+              ["head", "Head"],
+              ["edge", "Fore-edge"],
+            ] as [ViewKey, string][]
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => pick(k)}
+              className={`rounded-full px-4 py-1.5 text-[11px] tracking-[0.14em] uppercase transition-colors ${
+                view === k && !free
+                  ? "bg-[#e8eef5] text-[#101720]"
+                  : "text-[#9db0c6] hover:text-[#e8eef5]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!configuring && source && (
+        <p className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 text-[11px] tracking-[0.2em] whitespace-nowrap text-[#5f7387] uppercase">
+          {reading.open
+            ? "Tap or drag a page · double tap the cover to close"
+            : "Double tap the book to open it"}
+        </p>
+      )}
+
+      <div className="pointer-events-auto absolute top-6 right-6 flex flex-wrap justify-end gap-2">
+        {!configuring && (
+          <>
+            <button onClick={() => setImportOpen(true)} className={pillClass}>
+              <Upload size={13} /> Import
+            </button>
+            {books.length > 0 && (
+              <button onClick={() => setLibraryOpen(true)} className={pillClass}>
+                <Library size={13} /> Library
+              </button>
+            )}
+            {source && (
+              <button onClick={enterConfigure} className={pillClass}>
+                <Settings2 size={13} /> Configure
+              </button>
+            )}
+          </>
+        )}
+        {configuring && (
+          <>
+            <button
+              onClick={() => {
+                setEditing(false);
+                setBuilding((v) => !v);
+              }}
+              className={pillClass}
+            >
+              <Ruler size={13} /> Build
+            </button>
+            <button onClick={() => openEditor(openSlot)} className={pillClass}>
+              <Feather size={13} /> Artwork
+            </button>
+            <button
+              onClick={exitConfigure}
+              className="flex items-center gap-2 rounded-full bg-[#e8eef5] px-4 py-2 text-[11px] tracking-[0.16em] text-[#101720] uppercase"
+            >
+              <Check size={13} /> Done
+            </button>
+          </>
+        )}
       </div>
 
-      <div className="pointer-events-auto absolute top-6 right-6 flex gap-2">
-        <button
-          onClick={() => {
-            setEditing(false);
-            setBuilding((v) => !v);
-          }}
-          className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
-        >
-          <Ruler size={13} /> Build
-        </button>
-        <button
-          onClick={() => openEditor(openSlot)}
-          className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] tracking-[0.16em] text-[#cfdcea] uppercase backdrop-blur-md transition-colors hover:bg-white/10"
-        >
-          <Feather size={13} /> Artwork
-        </button>
-      </div>
+      {configuring && !building && !editing && (
+        <div className="pointer-events-auto absolute top-24 left-6 z-20 w-64 rounded-xl border border-white/10 bg-[#0e1319]/90 p-4 backdrop-blur-xl md:top-40">
+          <p className="text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">Presentation</p>
+          <label className="mt-3 flex items-center justify-between text-[11px] text-[#9db0c6]">
+            Auto spin
+            <input
+              type="checkbox"
+              checked={autoSpin}
+              onChange={(e) => setAutoSpin(e.target.checked)}
+              className="accent-[#e8eef5]"
+            />
+          </label>
+          <label className="mt-2 flex items-center justify-between text-[11px] text-[#9db0c6]">
+            Drag to orbit
+            <input
+              type="checkbox"
+              checked={orbit}
+              onChange={(e) => {
+                setOrbit(e.target.checked);
+                if (!e.target.checked) setFree(false);
+              }}
+              className="accent-[#e8eef5]"
+            />
+          </label>
+          <p className="mt-4 text-[10px] tracking-[0.24em] text-[#7f93aa] uppercase">Position</p>
+          <div className="mt-2 grid grid-cols-1 gap-1">
+            {POSES.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => choosePose(p.key)}
+                className={`rounded-lg px-3 py-1.5 text-left text-[12px] transition-colors ${
+                  pose === p.key
+                    ? "bg-[#e8eef5] text-[#101720]"
+                    : "text-[#9db0c6] hover:bg-white/5 hover:text-[#e8eef5]"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-[10px] leading-relaxed text-[#65788e]">
+            Every change is saved to {current?.title ?? "this book"}.
+          </p>
+        </div>
+      )}
+
+      {importOpen && (
+        <div className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0e1319] p-6">
+            <div className="flex items-start justify-between">
+              <h2 className="font-serif text-xl text-[#e8eef5]">Import a book</h2>
+              <button
+                onClick={() => setImportOpen(false)}
+                aria-label="Close"
+                className="rounded-full border border-white/10 p-2 text-[#9db0c6] hover:text-[#e8eef5]"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {(
+              [
+                ["pdf", "Book PDF (required)", "application/pdf"],
+                ["front", "Front cover image", "image/*"],
+                ["back", "Back cover image", "image/*"],
+                ["spine", "Spine image", "image/*"],
+                ["edges", "Page edge image", "image/*"],
+              ] as [keyof typeof draft, string, string][]
+            ).map(([k, label, accept]) => (
+              <label
+                key={k}
+                className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#131a22] px-3 py-2.5"
+              >
+                <span className="min-w-0">
+                  <span className="block text-[12px] text-[#e8eef5]">{label}</span>
+                  <span className="block truncate text-[10px] text-[#7f93aa]">
+                    {draft[k]?.name ?? (k === "pdf" ? "Choose a PDF" : "Optional")}
+                  </span>
+                </span>
+                {k === "pdf" ? (
+                  <FileText size={14} className="text-[#7f93aa]" />
+                ) : (
+                  <Upload size={14} className="text-[#7f93aa]" />
+                )}
+                <input
+                  type="file"
+                  accept={accept}
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setDraft((d) => ({ ...d, [k]: f }));
+                  }}
+                />
+              </label>
+            ))}
+            {pdfError && (
+              <p className="mt-3 text-[11px] text-[#e2a2a2]" role="alert">
+                {pdfError}
+              </p>
+            )}
+            <button
+              disabled={!draft.pdf || pdfBusy}
+              onClick={() => void importBook()}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#e8eef5] px-4 py-2.5 text-[11px] tracking-[0.16em] text-[#101720] uppercase disabled:opacity-40"
+            >
+              {pdfBusy && <Loader2 size={12} className="animate-spin" />} Add to library
+            </button>
+          </div>
+        </div>
+      )}
+
+      {libraryOpen && (
+        <div className={panelClass}>
+          <div className="flex items-start justify-between">
+            <h2 className="font-serif text-xl text-[#e8eef5]">Library</h2>
+            <button
+              onClick={() => setLibraryOpen(false)}
+              aria-label="Close library"
+              className="rounded-full border border-white/10 p-2 text-[#9db0c6] hover:text-[#e8eef5]"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="mt-5 space-y-2">
+            {books.map((b) => (
+              <div
+                key={b.id}
+                className={`flex items-center justify-between gap-2 rounded-xl border p-3 ${
+                  b.id === bookId
+                    ? "border-white/30 bg-white/[0.06]"
+                    : "border-white/10 bg-white/[0.03]"
+                }`}
+              >
+                <button
+                  onClick={() => {
+                    setLibraryOpen(false);
+                    if (b.id !== bookId) void presentBook(b);
+                  }}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-sm text-[#e8eef5]">{b.title}</span>
+                  <span className="text-[10px] text-[#7f93aa]">{b.pageCount} pages</span>
+                </button>
+                <button
+                  onClick={() => void removeBook(b.id)}
+                  aria-label={`Remove ${b.title}`}
+                  className="rounded-full p-2 text-[#7f93aa] hover:text-[#e2a2a2]"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {building && (
         <div className={panelClass}>
@@ -841,56 +1354,6 @@ export default function BookScene() {
             >
               <X size={14} />
             </button>
-          </div>
-
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm text-[#e8eef5]">Interior pages</p>
-                <p className="mt-0.5 text-[11px] text-[#7f93aa]">
-                  Import a PDF — each page becomes a real leaf in the text block
-                </p>
-              </div>
-              <FileText size={15} className="mt-1 shrink-0 text-[#7f93aa]" />
-            </div>
-
-            <div className="mt-3 flex items-center gap-2">
-              <label className="cursor-pointer rounded-full bg-[#e8eef5] px-3 py-1.5 text-[11px] tracking-[0.12em] text-[#101720] uppercase">
-                {source ? "Replace PDF" : "Import PDF"}
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={(e) => void importPdf(e.target.files?.[0])}
-                />
-              </label>
-              {source && (
-                <button onClick={clearPdf} className={chipClass}>
-                  Remove
-                </button>
-              )}
-            </div>
-
-            {pdfBusy && (
-              <p className="mt-3 flex items-center gap-2 text-[11px] text-[#9db0c6]">
-                <Loader2 size={12} className="animate-spin" />
-                Opening the PDF…
-              </p>
-            )}
-            {pdfError && (
-              <p className="mt-3 text-[11px] text-[#e2a2a2]" role="alert">
-                {pdfError}
-              </p>
-            )}
-            {!pdfBusy && source && (
-              <p className="mt-3 text-[11px] leading-relaxed text-[#7f93aa]">
-                {source.title} — {source.pageCount} pages
-                {source.truncated ? ` (first ${source.pageCount} shown)` : ""}
-                <br />
-                Click the book to open it, then tap a half, drag a page edge, or use the arrow keys
-                to turn pages.
-              </p>
-            )}
           </div>
 
           <div className="mt-3 space-y-3">
