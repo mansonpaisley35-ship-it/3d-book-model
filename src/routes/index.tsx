@@ -47,11 +47,7 @@ function Index() {
 
         <footer className="flex flex-wrap items-end justify-between gap-6">
           <p className="max-w-sm text-sm leading-relaxed text-[#8fa3ba]">
-            A blank cloth hardcover modelled procedurally in three.js. Tap a quill to import cover
-            artwork, or import a PDF so every page becomes a real leaf in the text block.
-          </p>
-          <p className="text-[11px] tracking-[0.2em] text-[#5f7387]">
-            DRAG TO ORBIT · SCROLL TO ZOOM
+            Import a PDF and it becomes a cloth hardcover. Your books stay in your library.
           </p>
         </footer>
       </div>
