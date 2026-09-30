@@ -8,3 +8,4 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+- Imported books (PDF, cover images, look, pose) are stored in browser IndexedDB via src/components/book/library.ts — user chose browser-only storage, no sign-in.
