@@ -354,7 +354,7 @@ function PoseRig({
 
   useEffect(() => {
     const g = poseGroup.current;
-    const def = POSES.find((p) => p.key === pose) ?? POSES[0];
+    const def = POSES.find((p) => p.key === pose) ?? POSES[0]!;
     const tw = tween.current;
     const toY = def.lying ? -lyingDrop : 0;
     if (!g || !tw.init) {
