@@ -72,11 +72,14 @@ export function useBookMotion(spreadCount: number, enabled: boolean) {
   const step = useCallback(
     (dt: number) => {
       const m = motion.current;
-      const k = Math.min(1, dt * 3.2);
+      const safeDt = Math.min(dt, 0.05);
+      const k = 1 - Math.exp(-3.2 * safeDt);
       m.open += (m.openTarget - m.open) * k;
 
       if (turnDir && !m.dragging) {
-        m.turn = Math.min(1, m.turn + dt * 1.5);
+        // Accelerate through the airborne middle and decelerate into the stack.
+        const speed = 1.15 + 0.75 * Math.sin(Math.PI * m.turn);
+        m.turn = Math.min(1, m.turn + safeDt * speed);
         if (m.turn >= 1) {
           m.turn = 0;
           setSpread((s) => Math.min(lastSpread, Math.max(0, s + turnDir)));
@@ -97,9 +100,10 @@ export function useBookMotion(spreadCount: number, enabled: boolean) {
     const m = motion.current;
     if (!m.dragging) return;
     m.dragging = false;
-    if (m.turn < 0.4) {
+    if (m.turn < 0.45) {
       m.turn = 0;
       setTurnDir(null);
+      return;
     }
   }, []);
 
