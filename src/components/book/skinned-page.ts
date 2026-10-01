@@ -1,25 +1,17 @@
 /*
- * Bone-driven bendable page, adapted from the Gutenberg Press technique.
- *
- * A leaf is a subdivided box bound to a chain of bones that runs from the
- * binding to the fore-edge. Every frame each bone receives its own small
- * rotation, and those rotations accumulate along the chain, so the leaf sweeps
- * across the book purely by bending: the ROOT BONE NEVER MOVES, which is what
- * keeps the page permanently attached to the spine.
- *
- * Local axes (matching OpenBook's frame):
- *   +X = spine -> fore-edge   (the bone chain runs along this axis)
- *   +Y = tail  -> head
- *   +Z = page thickness
- * Bones therefore bend about Y, sweeping the leaf through the XZ plane.
+ * Spine-rooted, travelling-crease page deformation. The leaf is a subdivided
+ * box bound to a bone chain running from the binding to the fore-edge. Rather
+ * than scaling one fixed bend profile, the fold itself travels across the
+ * sheet, leaving flat paper on both sides of the moving curl.
  */
 import * as THREE from "three";
 
-/** Classic Hermite ramp; `low`>`high` gives a falling ramp, as in the reference. */
-export function smoothstep(low: number, high: number, value: number) {
-  let f = (value - low) / (high - low);
-  f = Math.min(1, Math.max(0, f));
-  return f * f * (3 - 2 * f);
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+function smootherstep(edge0: number, edge1: number, value: number) {
+  if (edge0 === edge1) return value < edge0 ? 0 : 1;
+  const t = clamp01((value - edge0) / (edge1 - edge0));
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 /**
@@ -27,36 +19,18 @@ export function smoothstep(low: number, high: number, value: number) {
  * (0 = spine, 1 = fore-edge) so the same numbers work at any trim size.
  */
 export const PAGE_TURN_CONFIG = {
-  /** bones in the chain: more = smoother curl, 20-32 is the useful range */
-  boneCount: 26,
-  /** geometry subdivisions per bone along the spine -> fore-edge axis */
+  boneCount: 28,
   segmentsPerBone: 2,
-  /** subdivisions across the head -> tail axis (kept low: the page only bends one way) */
   heightSegments: 2,
-
-  /** the binding zone, where the sheet curves around the spine */
-  spineZone: 0.18,
-  spineCurveIntensity: 0.4,
-
-  /** bend region just off the binding */
-  earlyPivot: 0.26,
-  earlyThreshold: 0.42,
-  earlyIntensity: 1,
-
-  /** the main body of the turn */
-  curlPivot: 0.55,
-  curlThreshold: 0.62,
-  curlIntensity: 1.35,
-
-  /** fore-edge, where the leaf settles flat onto the opposite stack */
-  latePivot: 0.85,
-  lateThreshold: 0.5,
-  lateIntensity: 0.55,
-
-  /** extra mid-turn curl amplitude (faded out at both ends of the turn) */
-  bulge: 0.3,
-  /** slight out-of-plane twist so the fore-edge corner lifts */
-  lift: 0.06,
+  curlWidth: 0.16,
+  curlWidthMin: 0.075,
+  curlDepth: 0.11,
+  foreEdgeLift: 0.075,
+  spineStiffness: 0.9,
+  twist: 0.035,
+  settleStart: 0.78,
+  settleWidth: 0.22,
+  asymmetry: 0.035,
 };
 
 export type SkinnedPage = {
@@ -65,6 +39,50 @@ export type SkinnedPage = {
   update: (progress: number, dir: 1 | -1) => void;
   dispose: () => void;
 };
+
+/** Desired paper tangent at one normalized point along the sheet. */
+function pageTangent(
+  u: number,
+  progress: number,
+  dir: 1 | -1,
+  cfg: typeof PAGE_TURN_CONFIG,
+) {
+  const p = clamp01(progress);
+  const airborne = Math.sin(Math.PI * p);
+  const width = cfg.curlWidthMin + (cfg.curlWidth - cfg.curlWidthMin) * airborne;
+
+  /* Start with the fold just before the binding and finish just beyond the
+   * fore-edge. This makes both endpoint poses exactly flat. Paper behind the
+   * fold has reached the destination; paper ahead of it remains on its source. */
+  const centre = -width * 0.5 + (1 + width) * p + 0.045 * airborne;
+  const left = centre - width * 0.5;
+  const right = centre + width * 0.5;
+  let folded = 1 - smootherstep(left, right, u);
+
+  const spineZone = Math.max(0.001, cfg.spineStiffness * 0.22);
+  const spineWeight = 1 - smootherstep(0, spineZone, u);
+  folded *= 1 - spineWeight * 0.22 * airborne;
+
+  const lead = airborne * smootherstep(0.15, 0.85, u) * 0.045;
+  const asymmetry = cfg.asymmetry * airborne * Math.sin(u * Math.PI);
+  return -dir * Math.PI * clamp01(folded + lead + asymmetry);
+}
+
+/** Write local bone rotations as differences between neighbouring tangents. */
+function writeBoneAngles(
+  out: Float32Array,
+  progress: number,
+  dir: 1 | -1,
+  cfg: typeof PAGE_TURN_CONFIG,
+) {
+  let previous = pageTangent(0, progress, dir, cfg);
+  out[0] = -dir * 0.018 * Math.sin(Math.PI * progress);
+  for (let i = 1; i < out.length; i += 1) {
+    const current = pageTangent(i / (out.length - 1), progress, dir, cfg);
+    out[i] = current - previous;
+    previous = current;
+  }
+}
 
 /**
  * Build a leaf of the given size whose root bone sits at local x = 0, i.e. on
@@ -128,42 +146,33 @@ export function createSkinnedPage(
   // leaf out of view halfway through a turn
   mesh.frustumCulled = false;
 
-  // Per-bone shape weights are static: only their scale changes each frame.
-  const shape = new Float32Array(N);
-  const curl = new Float32Array(N);
-  const spine = new Float32Array(N);
-  let shapeSum = 0;
-  for (let i = 0; i < N; i += 1) {
-    const u = i / (N - 1);
-    const early =
-      smoothstep(cfg.earlyThreshold, 0, Math.abs(u - cfg.earlyPivot)) * cfg.earlyIntensity;
-    const main = smoothstep(cfg.curlThreshold, 0, Math.abs(u - cfg.curlPivot)) * cfg.curlIntensity;
-    const late = smoothstep(cfg.lateThreshold, 0, Math.abs(u - cfg.latePivot)) * cfg.lateIntensity;
-    spine[i] = smoothstep(cfg.spineZone, 0, u);
-    shape[i] = early + main + late + spine[i]! * 0.35;
-    curl[i] = main;
-    shapeSum += shape[i]!;
-  }
-  // normalise, so the accumulated rotation is exactly the requested turn angle
-  // and the leaf always settles perfectly flat on the far stack
-  for (let i = 0; i < N; i += 1) shape[i] = shape[i]! / (shapeSum || 1);
+  const boneAngles = new Float32Array(N);
 
   const update = (progress: number, dir: 1 | -1) => {
-    const p = Math.min(1, Math.max(0, progress));
-    // total sweep: 0 -> pi across the spine. Forward turns bend negative about
-    // Y (so the leaf rises through +Z), backward turns mirror the sign.
-    const total = -dir * Math.PI * p;
-    // both extra shapes fade to zero at rest, so a settled leaf is flat
-    const env = Math.sin(Math.PI * p);
+    const p = clamp01(progress);
+    const airborne = Math.sin(Math.PI * p);
+    writeBoneAngles(boneAngles, p, dir, cfg);
+
     for (let i = 0; i < N; i += 1) {
       const bone = bones[i]!;
-      const angle =
-        shape[i]! * total +
-        -dir * cfg.bulge * env * curl[i]! * 0.12 +
-        -dir * cfg.spineCurveIntensity * env * spine[i]! * 0.06;
-      bone.rotation.y = angle;
-      bone.rotation.z = dir * cfg.lift * env * curl[i]! * 0.05;
+      const u = i / (N - 1);
+      const centreBow = Math.sin(u * Math.PI) * cfg.curlDepth * airborne * airborne * 0.055;
+      const settling =
+        smootherstep(0.18, 1, p) *
+        (1 - smootherstep(cfg.settleStart, cfg.settleStart + cfg.settleWidth, p));
+      const foreEdgeCurl =
+        cfg.foreEdgeLift * settling * smootherstep(0.45, 1, u) * 0.08;
+
+      bone.rotation.y = boneAngles[i]! - dir * (centreBow + foreEdgeCurl);
+      bone.rotation.z = dir * cfg.twist * airborne * Math.sin(u * Math.PI) * 0.06;
+      // Child-bone translation accumulates through the hierarchy and makes the
+      // leaf drift away from its binding. Keep the chain purely on local X.
+      bone.position.z = 0;
     }
+
+    bones[0]!.position.x = 0;
+    bones[0]!.position.z = 0;
+    bones[0]!.rotation.z = 0;
   };
 
   update(0, 1);

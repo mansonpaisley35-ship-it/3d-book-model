@@ -177,11 +177,13 @@ function SkinnedTurningPage({
     if (!group) return;
     const p = Math.min(1, Math.max(0, motion.current.turn));
     page.update(p, direction);
-    group.position.z = zFrom + (zTo - zFrom) * p;
+    // The rig owns the turn; the host only moves the leaf softly between the
+    // source and destination stack heights.
+    const eased = p * p * (3 - 2 * p);
+    group.position.z = zFrom + (zTo - zFrom) * eased;
   });
 
-  // a forward leaf starts lying along +X (right half); a backward leaf starts
-  // mirrored onto the left half, and the same bone solver drives both
+  // The root remains at x=0. Backward turns mirror the same deformation.
   return <group ref={host} rotation-y={direction === 1 ? 0 : -Math.PI} position-z={zFrom} />;
 }
 
