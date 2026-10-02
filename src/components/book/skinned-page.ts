@@ -138,7 +138,9 @@ export function createSkinnedPage(
   }
 
   const mesh = new THREE.SkinnedMesh(geometry, materials);
-  mesh.add(bones[0]!);
+  const root = bones[0];
+  if (!root) throw new Error("The page needs a binding bone");
+  mesh.add(root);
   mesh.bind(new THREE.Skeleton(bones));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -154,7 +156,8 @@ export function createSkinnedPage(
     writeBoneAngles(boneAngles, p, dir, cfg);
 
     for (let i = 0; i < N; i += 1) {
-      const bone = bones[i]!;
+      const bone = bones[i];
+      if (!bone) continue;
       const u = i / (N - 1);
       const centreBow = Math.sin(u * Math.PI) * cfg.curlDepth * airborne * airborne * 0.055;
       const settling =
@@ -163,16 +166,16 @@ export function createSkinnedPage(
       const foreEdgeCurl =
         cfg.foreEdgeLift * settling * smootherstep(0.45, 1, u) * 0.08;
 
-      bone.rotation.y = boneAngles[i]! - dir * (centreBow + foreEdgeCurl);
+      bone.rotation.y = (boneAngles[i] ?? 0) - dir * (centreBow + foreEdgeCurl);
       bone.rotation.z = dir * cfg.twist * airborne * Math.sin(u * Math.PI) * 0.06;
       // Child-bone translation accumulates through the hierarchy and makes the
       // leaf drift away from its binding. Keep the chain purely on local X.
       bone.position.z = 0;
     }
 
-    bones[0]!.position.x = 0;
-    bones[0]!.position.z = 0;
-    bones[0]!.rotation.z = 0;
+    root.position.x = 0;
+    root.position.z = 0;
+    root.rotation.z = 0;
   };
 
   update(0, 1);
