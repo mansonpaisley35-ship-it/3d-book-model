@@ -125,10 +125,8 @@ function PageStack({
 
 /**
  * The leaf currently turning: a skinned page whose root bone sits ON the spine,
- * so it can never separate from the binding. `zFrom`/`zTo` are the resting
- * planes of the stack it leaves and the stack it lands on; the binding slides
- * between them across the turn, which is what a real sheet does inside the
- * spine cavity.
+ * so it can never separate from the binding. The host pivots at one fixed
+ * spine plane while the skin adds the travelling crease.
  */
 function SkinnedTurningPage({
   width,
