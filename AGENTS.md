@@ -9,4 +9,4 @@
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
 - Imported books (PDF, cover images, look, pose) are stored in browser IndexedDB via src/components/book/library.ts — user chose browser-only storage, no sign-in.
-- Page turning uses a spine-rooted X-axis bone chain with an absolute-progress travelling crease; the host group only eases between stack heights, so dragging can reverse without detaching the sheet.
+- Page turning uses a fixed spine pivot for the reversible 180° host sweep; its X-axis bone chain adds only a travelling crease and never translates in Z.

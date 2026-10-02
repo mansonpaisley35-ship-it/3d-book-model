@@ -125,17 +125,14 @@ function PageStack({
 
 /**
  * The leaf currently turning: a skinned page whose root bone sits ON the spine,
- * so it can never separate from the binding. `zFrom`/`zTo` are the resting
- * planes of the stack it leaves and the stack it lands on; the binding slides
- * between them across the turn, which is what a real sheet does inside the
- * spine cavity.
+ * so it can never separate from the binding. The host pivots at one fixed
+ * spine plane while the skin adds the travelling crease.
  */
 function SkinnedTurningPage({
   width,
   height,
   thickness,
-  zFrom,
-  zTo,
+  spineZ,
   motion,
   direction,
   materials,
@@ -143,8 +140,7 @@ function SkinnedTurningPage({
   width: number;
   height: number;
   thickness: number;
-  zFrom: number;
-  zTo: number;
+  spineZ: number;
   motion: React.MutableRefObject<BookMotion>;
   direction: TurnDir;
   materials: THREE.Material[];
@@ -176,15 +172,14 @@ function SkinnedTurningPage({
     const group = host.current;
     if (!group) return;
     const p = Math.min(1, Math.max(0, motion.current.turn));
+    // The root stays fixed at the binding. The host supplies the rigid sweep;
+    // the skin contributes only the temporary crease and gutter roll.
+    group.position.z = spineZ;
+    group.rotation.y = direction === 1 ? -Math.PI * p : -Math.PI + Math.PI * p;
     page.update(p, direction);
-    // The rig owns the turn; the host only moves the leaf softly between the
-    // source and destination stack heights.
-    const eased = p * p * (3 - 2 * p);
-    group.position.z = zFrom + (zTo - zFrom) * eased;
   });
 
-  // The root remains at x=0. Backward turns mirror the same deformation.
-  return <group ref={host} rotation-y={direction === 1 ? 0 : -Math.PI} position-z={zFrom} />;
+  return <group ref={host} position-z={spineZ} />;
 }
 
 export function OpenBook({
@@ -233,9 +228,6 @@ export function OpenBook({
   const rightBase = -caseHalf + board;
   const leftZ = leftBase + leftThickness / 2;
   const rightZ = rightBase + rightThickness / 2;
-  // resting planes of the turning leaf: just clear of each stack's top face
-  const leftRestZ = leftBase + leftThickness + leafThickness;
-  const rightRestZ = rightBase + rightThickness + leafThickness;
 
   const turnMaterials = useMemo(() => {
     const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
@@ -323,8 +315,7 @@ export function OpenBook({
           width={width}
           height={height}
           thickness={leafThickness}
-          zFrom={turnDir === 1 ? rightRestZ : leftRestZ}
-          zTo={turnDir === 1 ? leftRestZ : rightRestZ}
+          spineZ={board}
           motion={motion}
           direction={turnDir}
           materials={turnMaterials}
