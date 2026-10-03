@@ -315,7 +315,7 @@ export function OpenBook({
           width={width}
           height={height}
           thickness={leafThickness}
-          spineZ={board}
+          spineZ={caseHalf}
           motion={motion}
           direction={turnDir}
           materials={turnMaterials}
