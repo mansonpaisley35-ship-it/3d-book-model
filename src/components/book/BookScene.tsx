@@ -450,7 +450,7 @@ export default function BookScene() {
   const loadedRef = useRef<string | null>(null);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
-  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  const spreadCount = source ? Math.max(1, Math.ceil((source.pageCount - 2) / 2) + 1) : 0;
   const reading = useBookMotion(spreadCount, !!source && !configuring);
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);

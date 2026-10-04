@@ -458,7 +458,7 @@ export function Book({
   const openBlock = useRef<THREE.Group>(null);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
-  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  const spreadCount = source ? Math.max(1, Math.ceil((source.pageCount - 2) / 2) + 1) : 0;
   /* The split block is only mounted while the book is open: an unmounted leaf
    * cannot swallow the very click that opens the book. */
   const spreadOpen = !!source && !!reading && reading.open;
@@ -576,8 +576,6 @@ export function Book({
               width={m.pw}
               height={m.ph}
               thickness={m.pt}
-              caseHalf={m.T / 2}
-              board={c.boardThickness}
               source={source}
               motion={reading.motion}
               spread={reading.spread}

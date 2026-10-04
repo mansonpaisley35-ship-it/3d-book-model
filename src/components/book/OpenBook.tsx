@@ -186,8 +186,6 @@ export function OpenBook({
   width,
   height,
   thickness,
-  caseHalf,
-  board,
   source,
   motion,
   spread,
@@ -201,8 +199,6 @@ export function OpenBook({
   width: number;
   height: number;
   thickness: number;
-  caseHalf: number;
-  board: number;
   source: PdfBookSource;
   motion: React.MutableRefObject<BookMotion>;
   spread: number;
@@ -217,8 +213,8 @@ export function OpenBook({
   const ready = () => setRevision((value) => value + 1);
   const page = (index: number) => source.getTexture(index, ready);
   const k = spread;
-  const leftPage = turnDir === -1 ? Math.max(1, 2 * k - 1) : 2 * k + 1;
-  const rightPage = turnDir === 1 ? 2 * k + 4 : 2 * k + 2;
+  const leftPage = 2 * k;
+  const rightPage = 2 * k + 1;
   // Like the Gutenberg engine, both page stacks share the binding centre.
   // At the first spread every unturned leaf remains in the right stack; an
   // artificial left stack here is what made a page appear to slide away from
@@ -231,8 +227,8 @@ export function OpenBook({
   const rightZ = -rightThickness / 2;
 
   const turnMaterials = useMemo(() => {
-    const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
-    const backIndex = turnDir === 1 ? 2 * k + 3 : 2 * k + 1;
+    const frontIndex = turnDir === 1 ? 2 * k + 1 : 2 * k;
+    const backIndex = turnDir === 1 ? 2 * k + 2 : 2 * k - 1;
     const edge = new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98 });
     const front = new THREE.MeshStandardMaterial({
       color: paperColor,
@@ -310,7 +306,7 @@ export function OpenBook({
           height={height}
           thickness={rightThickness}
           z={rightZ}
-          texture={page(k === 0 ? 1 : rightPage)}
+          texture={page(rightPage)}
           paperColor={paperColor}
           onPointerDown={grab(1)}
         />
