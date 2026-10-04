@@ -458,7 +458,7 @@ export function Book({
   const openBlock = useRef<THREE.Group>(null);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
-  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  const spreadCount = source ? Math.max(1, Math.ceil((source.pageCount - 2) / 2) + 1) : 0;
   /* The split block is only mounted while the book is open: an unmounted leaf
    * cannot swallow the very click that opens the book. */
   const spreadOpen = !!source && !!reading && reading.open;
@@ -474,13 +474,15 @@ export function Book({
     const open = reading?.motion.current.open ?? 0;
     // the front board swings about its own joint, on the front face
     if (frontCover.current) frontCover.current.rotation.y = -Math.PI * open;
-    // ...and the whole book slides back to stay centred as it opens out
-    if (recentre.current) recentre.current.position.x = (m.W / 2) * open;
-    // an open book is twice as wide, so pull it back into frame
-    const s = 1 - 0.44 * open;
+    // Reframe only after the cover has begun moving. The Gutenberg motion
+    // keeps the text block physically still instead of making it appear to
+    // slide along the board at the start of the opening.
+    const frame = open * open * (3 - 2 * open);
+    if (recentre.current) recentre.current.position.x = (m.W / 2) * frame;
+    const s = 1 - 0.44 * frame;
     group.current.scale.setScalar(s);
-    if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
-    if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
+    if (closedBlock.current) closedBlock.current.visible = open < 0.18 || !source;
+    if (openBlock.current) openBlock.current.visible = open >= 0.18 && !!source;
   });
 
   const quillProps = {
@@ -574,8 +576,6 @@ export function Book({
               width={m.pw}
               height={m.ph}
               thickness={m.pt}
-              caseHalf={m.T / 2}
-              board={c.boardThickness}
               source={source}
               motion={reading.motion}
               spread={reading.spread}

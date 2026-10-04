@@ -186,8 +186,6 @@ export function OpenBook({
   width,
   height,
   thickness,
-  caseHalf,
-  board,
   source,
   motion,
   spread,
@@ -201,8 +199,6 @@ export function OpenBook({
   width: number;
   height: number;
   thickness: number;
-  caseHalf: number;
-  board: number;
   source: PdfBookSource;
   motion: React.MutableRefObject<BookMotion>;
   spread: number;
@@ -217,21 +213,22 @@ export function OpenBook({
   const ready = () => setRevision((value) => value + 1);
   const page = (index: number) => source.getTexture(index, ready);
   const k = spread;
-  const leftPage = turnDir === -1 ? Math.max(1, 2 * k - 1) : 2 * k + 1;
-  const rightPage = turnDir === 1 ? 2 * k + 4 : 2 * k + 2;
-  const fraction = spreadCount > 0 ? (k + 1) / (spreadCount + 1) : 0.5;
-  const minThickness = Math.max(0.012, thickness * 0.018);
-  const leftThickness = Math.max(minThickness, thickness * fraction);
-  const rightThickness = Math.max(minThickness, thickness * (1 - fraction));
+  const leftPage = 2 * k;
+  const rightPage = 2 * k + 1;
+  // Like the Gutenberg engine, both page stacks share the binding centre.
+  // At the first spread every unturned leaf remains in the right stack; an
+  // artificial left stack here is what made a page appear to slide away from
+  // the cover during opening.
+  const fraction = spreadCount > 1 ? k / (spreadCount - 1) : 0;
+  const leftThickness = thickness * fraction;
+  const rightThickness = thickness * (1 - fraction);
   const leafThickness = Math.max(0.004, thickness * 0.006);
-  const leftBase = caseHalf + board;
-  const rightBase = -caseHalf + board;
-  const leftZ = leftBase + leftThickness / 2;
-  const rightZ = rightBase + rightThickness / 2;
+  const leftZ = leftThickness / 2;
+  const rightZ = -rightThickness / 2;
 
   const turnMaterials = useMemo(() => {
-    const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
-    const backIndex = turnDir === 1 ? 2 * k + 3 : 2 * k + 1;
+    const frontIndex = turnDir === 1 ? 2 * k + 1 : 2 * k;
+    const backIndex = turnDir === 1 ? 2 * k + 2 : 2 * k - 1;
     const edge = new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98 });
     const front = new THREE.MeshStandardMaterial({
       color: paperColor,
@@ -288,34 +285,38 @@ export function OpenBook({
 
   return (
     <group>
-      <PageStack
-        name="leftPageBlock"
-        side={-1}
-        width={width}
-        height={height}
-        thickness={leftThickness}
-        z={leftZ}
-        texture={page(leftPage)}
-        paperColor={paperColor}
-        onPointerDown={grab(-1)}
-      />
-      <PageStack
-        name="rightPageBlock"
-        side={1}
-        width={width}
-        height={height}
-        thickness={rightThickness}
-        z={rightZ}
-        texture={page(rightPage)}
-        paperColor={paperColor}
-        onPointerDown={grab(1)}
-      />
+      {leftThickness > 0.001 && (
+        <PageStack
+          name="leftPageBlock"
+          side={-1}
+          width={width}
+          height={height}
+          thickness={leftThickness}
+          z={leftZ}
+          texture={page(leftPage)}
+          paperColor={paperColor}
+          onPointerDown={grab(-1)}
+        />
+      )}
+      {rightThickness > 0.001 && (
+        <PageStack
+          name="rightPageBlock"
+          side={1}
+          width={width}
+          height={height}
+          thickness={rightThickness}
+          z={rightZ}
+          texture={page(rightPage)}
+          paperColor={paperColor}
+          onPointerDown={grab(1)}
+        />
+      )}
       {turnDir && (
         <SkinnedTurningPage
           width={width}
           height={height}
           thickness={leafThickness}
-          spineZ={caseHalf}
+          spineZ={0}
           motion={motion}
           direction={turnDir}
           materials={turnMaterials}

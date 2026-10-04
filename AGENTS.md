@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 - Imported books (PDF, cover images, look, pose) are stored in browser IndexedDB via src/components/book/library.ts — user chose browser-only storage, no sign-in.
 - Page turning uses a fixed spine pivot for the reversible 180° host sweep; its X-axis bone chain adds only a travelling crease and never translates in Z.
+- Open page stacks share the binding centre and divide the text-block thickness around it; the first opening keeps every unturned leaf together on the right.
