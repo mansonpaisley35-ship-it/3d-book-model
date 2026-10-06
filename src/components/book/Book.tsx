@@ -12,6 +12,7 @@ import { OpenBook } from "./OpenBook";
 import type { useBookMotion } from "./book-state";
 import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
+import { smoothstep } from "./page-rig-math";
 
 export type Reading = ReturnType<typeof useBookMotion>;
 
