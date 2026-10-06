@@ -108,8 +108,9 @@ export function leafCurve(
   for (let j = 0; j < segmentCount; j += 1) {
     const u = (j + 0.5) / segmentCount;
     const weight = smootherstep5(t * (1 + lag) - lag * u);
-    const sourceEnd = source[j + 1] ?? candidate;
-    const targetEnd = target[j + 1] ?? candidate;
+    const previous = output[j] ?? output[0]!;
+    const sourceEnd = source[j + 1] ?? previous;
+    const targetEnd = target[j + 1] ?? previous;
     const lift = Math.sin(Math.PI * weight) * 0.2 * Math.sin(Math.PI * u);
     const candidate = {
       x: sourceEnd.x + (targetEnd.x - sourceEnd.x) * weight,
