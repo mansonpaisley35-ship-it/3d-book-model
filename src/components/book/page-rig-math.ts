@@ -124,8 +124,8 @@ export function leafCurve(
       x: sourceEnd.x + (targetEnd.x - sourceEnd.x) * weight,
       z: sourceEnd.z + (targetEnd.z - sourceEnd.z) * weight,
     };
-    candidate.x += (direct.x - candidate.x) * 0.55;
-    candidate.z += (direct.z - candidate.z) * 0.55;
+    candidate.x += (direct.x - candidate.x) * 0.8;
+    candidate.z += (direct.z - candidate.z) * 0.8;
     const floor = Math.min(source[j + 1]?.z ?? candidate.z, target[j + 1]?.z ?? candidate.z);
     candidate.z = Math.max(candidate.z, floor);
     output.push(candidate);
