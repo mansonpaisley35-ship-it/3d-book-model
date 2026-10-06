@@ -108,16 +108,14 @@ export function leafCurve(
   for (let j = 0; j < segmentCount; j += 1) {
     const u = (j + 0.5) / segmentCount;
     const weight = smootherstep5(t * (1 + lag) - lag * u);
-    const sourceAngle = angleBetween(source[j] ?? output[0]!, source[j + 1] ?? output[0]!);
-    let targetAngle = angleBetween(target[j] ?? output[0]!, target[j + 1] ?? output[0]!);
-    const delta = Math.atan2(Math.sin(targetAngle - sourceAngle), Math.cos(targetAngle - sourceAngle));
-    targetAngle = sourceAngle + delta;
-    const angle = sourceAngle + (targetAngle - sourceAngle) * weight;
-    const sourcePoint = source[j] ?? output[0]!;
-    const sourceNext = source[j + 1] ?? sourcePoint;
-    const length = Math.hypot(sourceNext.x - sourcePoint.x, sourceNext.z - sourcePoint.z);
     const previous = output[j] ?? output[0]!;
-    const candidate = { x: previous.x + length * Math.cos(angle), z: previous.z + length * Math.sin(angle) };
+    const sourceEnd = source[j + 1] ?? previous;
+    const targetEnd = target[j + 1] ?? previous;
+    const lift = Math.sin(Math.PI * weight) * 0.2 * Math.sin(Math.PI * u);
+    const candidate = {
+      x: sourceEnd.x + (targetEnd.x - sourceEnd.x) * weight,
+      z: sourceEnd.z + (targetEnd.z - sourceEnd.z) * weight + lift,
+    };
     const floor = Math.min(source[j + 1]?.z ?? candidate.z, target[j + 1]?.z ?? candidate.z);
     candidate.z = Math.max(candidate.z, floor);
     output.push(candidate);

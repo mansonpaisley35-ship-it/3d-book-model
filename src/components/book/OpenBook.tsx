@@ -40,7 +40,7 @@ function buildPrism(bottomZ: number, height: number, pageHeight: number, points:
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  geometry.userData.height = height;
+  geometry.userData["height"] = height;
   return geometry;
 }
 
@@ -291,10 +291,12 @@ export function OpenBook({
 }) {
   const [revision, setRevision] = useState(0);
   const [, setFrameRevision] = useState(0);
+  const geometryKey = useRef("");
   const ready = useCallback(() => setRevision((value) => value + 1), []);
   const page = (index: number) => source.getTexture(index, ready);
   const totalLeaves = Math.max(1, spreadCount - 1);
-  const progress = turnDir ? smoothstep(motion.current.turn) : 0;
+  const quantizedTurn = Math.round(motion.current.turn * 80) / 80;
+  const progress = turnDir ? smoothstep(quantizedTurn) : 0;
   const transfer = turnDir ? turnDir * progress : 0;
   const leafThickness = thickness / totalLeaves;
   const leftLeaves = Math.max(0.3, spread + transfer);
@@ -313,8 +315,10 @@ export function OpenBook({
   );
 
   useFrame(() => {
-    const next = Math.round(motion.current.open * 80) / 80;
-    if (Math.abs(next - quantizedOpen) > 1e-6 || turnDir) setFrameRevision((value) => value + 1);
+    const key = `${Math.round(motion.current.open * 80)}:${turnDir ? Math.round(motion.current.turn * 80) : 0}:${spread}:${turnDir ?? 0}`;
+    if (key === geometryKey.current) return;
+    geometryKey.current = key;
+    setFrameRevision((value) => value + 1);
   });
 
   const drag = useRef<{

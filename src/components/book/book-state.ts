@@ -83,7 +83,6 @@ export function useBookMotion(spreadCount: number, enabled: boolean) {
       if (!turnDirRef.current && spreadRef.current > 0) queue.current.push(-1);
       if (spreadRef.current === 0 && !turnDirRef.current) {
         motion.current.openTarget = 0;
-        setOpen(false);
       }
       return;
     }
@@ -139,6 +138,7 @@ export function useBookMotion(spreadCount: number, enabled: boolean) {
       if (springSettled(opened, m.openTarget, 8e-4, 4e-3)) {
         m.open = m.openTarget;
         m.openVelocity = 0;
+        if (m.openTarget === 0) setOpen(false);
       }
 
       const activeDirection = turnDirRef.current;
