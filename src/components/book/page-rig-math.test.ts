@@ -52,10 +52,12 @@ describe("open-book rig math", () => {
   test("60fps leaf displacement stays under the teleport threshold", () => {
     const left = restingCurve(0, -0.4, 3.2, 0.18, 1, -1).points;
     const right = restingCurve(0, -0.4, 3.2, 0.34, 1, 1).points;
-    let previous = leafCurve(right, left, 0, 0.4, 1);
+    let spring = { value: 0, velocity: 0 };
+    let previous = leafCurve(right, left, spring.value, 0.4, 1);
     let maximum = 0;
     for (let frame = 1; frame <= 120; frame += 1) {
-      const current = leafCurve(right, left, frame / 120, 0.4, 1);
+      spring = stepCriticalSpring(spring, 1, 8.5, 1 / 60);
+      const current = leafCurve(right, left, spring.value, 0.4, 1);
       maximum = Math.max(maximum, ...current.map((point, index) => distance(point, previous[index]!)));
       previous = current;
     }
