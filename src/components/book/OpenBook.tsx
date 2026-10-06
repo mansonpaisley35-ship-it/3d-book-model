@@ -40,7 +40,7 @@ function buildPrism(bottomZ: number, height: number, pageHeight: number, points:
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  geometry.userData.height = height;
+  geometry.userData["height"] = height;
   return geometry;
 }
 

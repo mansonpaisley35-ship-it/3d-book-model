@@ -118,6 +118,14 @@ export function leafCurve(
     const length = Math.hypot(sourceNext.x - sourcePoint.x, sourceNext.z - sourcePoint.z);
     const previous = output[j] ?? output[0]!;
     const candidate = { x: previous.x + length * Math.cos(angle), z: previous.z + length * Math.sin(angle) };
+    const sourceEnd = source[j + 1] ?? candidate;
+    const targetEnd = target[j + 1] ?? candidate;
+    const direct = {
+      x: sourceEnd.x + (targetEnd.x - sourceEnd.x) * weight,
+      z: sourceEnd.z + (targetEnd.z - sourceEnd.z) * weight,
+    };
+    candidate.x += (direct.x - candidate.x) * 0.55;
+    candidate.z += (direct.z - candidate.z) * 0.55;
     const floor = Math.min(source[j + 1]?.z ?? candidate.z, target[j + 1]?.z ?? candidate.z);
     candidate.z = Math.max(candidate.z, floor);
     output.push(candidate);
