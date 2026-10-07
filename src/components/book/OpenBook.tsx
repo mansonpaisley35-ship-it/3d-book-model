@@ -120,6 +120,7 @@ type StackProps = {
   points: Point2[];
   baseZ: number;
   thickness: number;
+  visible: boolean;
   height: number;
   texture: THREE.Texture | null;
   mirrored: boolean;
@@ -132,6 +133,7 @@ function PageStack({
   points,
   baseZ,
   thickness,
+  visible,
   height,
   texture,
   mirrored,
@@ -173,7 +175,7 @@ function PageStack({
   );
 
   return (
-    <group visible={thickness > 0.0001}>
+    <group visible={visible && thickness > 0.0001}>
       <mesh name={name} geometry={prism} material={edgeMaterial} castShadow receiveShadow onPointerDown={onPointerDown} />
       <mesh
         name={`${name}Page`}
@@ -387,6 +389,7 @@ export function OpenBook({
         points={leftCurve}
         baseZ={baseZ}
         thickness={leftThickness}
+        visible={leftLeaves > 0.3001}
         height={height}
         texture={leftPage >= 0 ? page(leftPage) : null}
         mirrored
@@ -398,6 +401,7 @@ export function OpenBook({
         points={rightCurve}
         baseZ={baseZ}
         thickness={rightThickness}
+        visible={rightLeaves > 0.3001}
         height={height}
         texture={page(rightPage)}
         mirrored={false}
