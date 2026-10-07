@@ -216,9 +216,9 @@ function TurningLeaf({
   paperColor: string;
   onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
 }) {
-  const startLeft = useMemo(() => restingCurve(0, baseZ, width, leftBefore, 1, -1).points, [baseZ, width, leftBefore]);
+  const startLeft = useMemo(() => openingCurve(restingCurve(0, baseZ, width, leftBefore, 1, -1).points, 1), [baseZ, width, leftBefore]);
   const startRight = useMemo(() => restingCurve(0, baseZ, width, rightBefore, 1, 1).points, [baseZ, width, rightBefore]);
-  const endLeft = useMemo(() => restingCurve(0, baseZ, width, leftAfter, 1, -1).points, [baseZ, width, leftAfter]);
+  const endLeft = useMemo(() => openingCurve(restingCurve(0, baseZ, width, leftAfter, 1, -1).points, 1), [baseZ, width, leftAfter]);
   const endRight = useMemo(() => restingCurve(0, baseZ, width, rightAfter, 1, 1).points, [baseZ, width, rightAfter]);
   const source = direction > 0 ? startRight : startLeft;
   const initial = useMemo(() => source.map((point) => ({ ...point })), [source]);
