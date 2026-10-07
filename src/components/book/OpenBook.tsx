@@ -7,6 +7,7 @@ import {
   PAGE_SEGMENTS,
   clamp01,
   leafCurve,
+  openingCurve,
   restingCurve,
   smoothstep,
   type Point2,
@@ -306,7 +307,7 @@ export function OpenBook({
   const baseZ = -thickness / 2;
   const quantizedOpen = Math.round(motion.current.open * 80) / 80;
   const leftCurve = useMemo(
-    () => restingCurve(0, baseZ, width, leftThickness, quantizedOpen, -1).points,
+    () => openingCurve(restingCurve(0, baseZ, width, leftThickness, quantizedOpen, -1).points, quantizedOpen),
     [baseZ, width, leftThickness, quantizedOpen],
   );
   const rightCurve = useMemo(
@@ -374,8 +375,8 @@ export function OpenBook({
       };
     };
 
-  const leftPage = 2 * spread;
-  const rightPage = 2 * spread + 1;
+  const leftPage = 2 * spread - 1;
+  const rightPage = 2 * spread;
   const frontIndex = turnDir === 1 ? rightPage : leftPage;
   const backIndex = turnDir === 1 ? rightPage + 1 : leftPage - 1;
 
@@ -387,7 +388,7 @@ export function OpenBook({
         baseZ={baseZ}
         thickness={leftThickness}
         height={height}
-        texture={page(leftPage)}
+        texture={leftPage >= 0 ? page(leftPage) : null}
         mirrored
         paperColor={paperColor}
         onPointerDown={grab(-1)}

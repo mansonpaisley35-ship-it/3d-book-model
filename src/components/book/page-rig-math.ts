@@ -109,18 +109,45 @@ export function leafCurve(
     const u = (j + 0.5) / segmentCount;
     const weight = smootherstep5(t * (1 + lag) - lag * u);
     const previous = output[j] ?? output[0]!;
+    const sourceStart = source[j] ?? previous;
     const sourceEnd = source[j + 1] ?? previous;
+    const targetStart = target[j] ?? previous;
     const targetEnd = target[j + 1] ?? previous;
-    const lift = Math.sin(Math.PI * weight) * 0.2 * Math.sin(Math.PI * u);
+    const sourceAngle = angleBetween(sourceStart, sourceEnd);
+    let targetAngle = angleBetween(targetStart, targetEnd);
+    if (direction > 0) {
+      while (targetAngle < sourceAngle) targetAngle += Math.PI * 2;
+    } else {
+      while (targetAngle > sourceAngle) targetAngle -= Math.PI * 2;
+    }
+    const angle = sourceAngle + (targetAngle - sourceAngle) * weight;
+    const length = Math.hypot(sourceEnd.x - sourceStart.x, sourceEnd.z - sourceStart.z);
+    const lift = Math.sin(Math.PI * weight) * 0.075 * Math.sin(Math.PI * u);
     const candidate = {
-      x: sourceEnd.x + (targetEnd.x - sourceEnd.x) * weight,
-      z: sourceEnd.z + (targetEnd.z - sourceEnd.z) * weight + lift,
+      x: previous.x + length * Math.cos(angle),
+      z: previous.z + length * Math.sin(angle) + lift,
     };
     const floor = Math.min(source[j + 1]?.z ?? candidate.z, target[j + 1]?.z ?? candidate.z);
     candidate.z = Math.max(candidate.z, floor);
     output.push(candidate);
   }
   return output;
+}
+
+/** The left stack follows the opening cover, occupying the closed right-hand path at open=0. */
+export function openingCurve(points: readonly Point2[], open: number) {
+  const root = points[0] ?? { x: 0, z: 0 };
+  const angle = Math.PI * (1 - clamp01(open));
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  return points.map((point) => {
+    const dx = point.x - root.x;
+    const dz = point.z - root.z;
+    return {
+      x: root.x + cosine * dx + sine * dz,
+      z: root.z - sine * dx + cosine * dz,
+    };
+  });
 }
 
 export type SpringState = { value: number; velocity: number };
