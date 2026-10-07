@@ -821,8 +821,8 @@ export default function BookScene() {
           enablePan={false}
           minDistance={5}
           maxDistance={22}
-          minPolarAngle={0.15}
-          maxPolarAngle={Math.PI / 1.9}
+          minPolarAngle={0.05}
+          maxPolarAngle={Math.PI - 0.05}
           enableDamping
           dampingFactor={0.06}
         />
