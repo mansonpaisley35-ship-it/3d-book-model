@@ -7,6 +7,7 @@ import {
   PAGE_SEGMENTS,
   clamp01,
   leafCurve,
+  openingCurve,
   restingCurve,
   smoothstep,
   type Point2,
@@ -119,6 +120,7 @@ type StackProps = {
   points: Point2[];
   baseZ: number;
   thickness: number;
+  visible: boolean;
   height: number;
   texture: THREE.Texture | null;
   mirrored: boolean;
@@ -131,6 +133,7 @@ function PageStack({
   points,
   baseZ,
   thickness,
+  visible,
   height,
   texture,
   mirrored,
@@ -172,7 +175,7 @@ function PageStack({
   );
 
   return (
-    <group visible={thickness > 0.0001}>
+    <group visible={visible && thickness > 0.0001}>
       <mesh name={name} geometry={prism} material={edgeMaterial} castShadow receiveShadow onPointerDown={onPointerDown} />
       <mesh
         name={`${name}Page`}
@@ -215,9 +218,9 @@ function TurningLeaf({
   paperColor: string;
   onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
 }) {
-  const startLeft = useMemo(() => restingCurve(0, baseZ, width, leftBefore, 1, -1).points, [baseZ, width, leftBefore]);
+  const startLeft = useMemo(() => openingCurve(restingCurve(0, baseZ, width, leftBefore, 1, -1).points, 1), [baseZ, width, leftBefore]);
   const startRight = useMemo(() => restingCurve(0, baseZ, width, rightBefore, 1, 1).points, [baseZ, width, rightBefore]);
-  const endLeft = useMemo(() => restingCurve(0, baseZ, width, leftAfter, 1, -1).points, [baseZ, width, leftAfter]);
+  const endLeft = useMemo(() => openingCurve(restingCurve(0, baseZ, width, leftAfter, 1, -1).points, 1), [baseZ, width, leftAfter]);
   const endRight = useMemo(() => restingCurve(0, baseZ, width, rightAfter, 1, 1).points, [baseZ, width, rightAfter]);
   const source = direction > 0 ? startRight : startLeft;
   const initial = useMemo(() => source.map((point) => ({ ...point })), [source]);
@@ -306,7 +309,7 @@ export function OpenBook({
   const baseZ = -thickness / 2;
   const quantizedOpen = Math.round(motion.current.open * 80) / 80;
   const leftCurve = useMemo(
-    () => restingCurve(0, baseZ, width, leftThickness, quantizedOpen, -1).points,
+    () => openingCurve(restingCurve(0, baseZ, width, leftThickness, quantizedOpen, -1).points, quantizedOpen),
     [baseZ, width, leftThickness, quantizedOpen],
   );
   const rightCurve = useMemo(
@@ -374,8 +377,8 @@ export function OpenBook({
       };
     };
 
-  const leftPage = 2 * spread;
-  const rightPage = 2 * spread + 1;
+  const leftPage = 2 * spread - 1;
+  const rightPage = 2 * spread;
   const frontIndex = turnDir === 1 ? rightPage : leftPage;
   const backIndex = turnDir === 1 ? rightPage + 1 : leftPage - 1;
 
@@ -386,8 +389,9 @@ export function OpenBook({
         points={leftCurve}
         baseZ={baseZ}
         thickness={leftThickness}
+        visible={leftLeaves > 0.3001}
         height={height}
-        texture={page(leftPage)}
+        texture={leftPage >= 0 ? page(leftPage) : null}
         mirrored
         paperColor={paperColor}
         onPointerDown={grab(-1)}
@@ -397,6 +401,7 @@ export function OpenBook({
         points={rightCurve}
         baseZ={baseZ}
         thickness={rightThickness}
+        visible={rightLeaves > 0.3001}
         height={height}
         texture={page(rightPage)}
         mirrored={false}
