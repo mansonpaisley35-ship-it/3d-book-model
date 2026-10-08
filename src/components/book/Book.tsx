@@ -12,9 +12,6 @@ import { OpenBook } from "./OpenBook";
 import type { useBookMotion } from "./book-state";
 import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
-import { smoothstep } from "./page-rig-math";
-
-const HINGE_SEG = 14;
 
 export type Reading = ReturnType<typeof useBookMotion>;
 
@@ -455,154 +452,35 @@ export function Book({
   }, [pageSideMaterial, pageEdgeMap, edgeTex, c.edgeColor, c.pageEdgeVariation, rounded]);
 
   /* -------------------- opening & page turning -------------------- */
-  const frontPivot = useRef<THREE.Group>(null);
   const frontCover = useRef<THREE.Group>(null);
-  const spineMesh = useRef<THREE.Mesh>(null);
+  const recentre = useRef<THREE.Group>(null);
   const closedBlock = useRef<THREE.Group>(null);
   const openBlock = useRef<THREE.Group>(null);
-  const hingeMesh = useRef<THREE.Mesh>(null);
-  const hingeGeo = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array((HINGE_SEG + 1) * 6), 3));
-    const idx: number[] = [];
-    for (let i = 0; i < HINGE_SEG; i++) {
-      const a = i * 2;
-      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    }
-    g.setIndex(idx);
-    return g;
-  }, []);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
-  const spreadCount = source ? Math.max(1, Math.ceil((source.pageCount - 2) / 2) + 1) : 0;
-  const spreadOpen = !!source && !!reading;
-  const caseJoint = joint(c);
-  const innerHalf = m.T / 2 - c.boardThickness;
-  const flatSpineLength = innerHalf * 2;
-  const gutterX = caseJoint.jointX - flatSpineLength / 2;
-  const pageForeX = m.pageCX + m.pw / 2;
-  const openPageWidth = Math.max(0.3, pageForeX - gutterX);
-  const endpaperColor = useMemo(() => "#" + new THREE.Color(c.pageColor).multiplyScalar(0.93).getHexString(), [c.pageColor]);
-  const spineBuffers = useMemo(() => {
-    const rest = new Float32Array(spineGeo.getAttribute("position").array as ArrayLike<number>);
-    const flat = new Float32Array(rest.length);
-    const crown = -c.bookWidth / 2 - c.spineExtension;
-    const radialSpan = Math.max(1e-4, caseJoint.jointX - crown);
-    for (let i = 0; i < rest.length; i += 3) {
-      const x = rest[i] ?? 0;
-      const y = rest[i + 1] ?? 0;
-      const z = rest[i + 2] ?? 0;
-      const s = clamp01((z + innerHalf) / Math.max(1e-4, 2 * innerHalf));
-      const tau = clamp01((caseJoint.jointX - x) / radialSpan);
-      flat[i] = caseJoint.jointX - flatSpineLength * s;
-      flat[i + 1] = y;
-      flat[i + 2] = -m.T / 2 + c.boardThickness * tau;
-    }
-    return { rest, flat };
-  }, [spineGeo, c.bookWidth, c.spineExtension, c.boardThickness, caseJoint.jointX, innerHalf, flatSpineLength, m.T]);
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  /* The split block is only mounted while the book is open: an unmounted leaf
+   * cannot swallow the very click that opens the book. */
+  const spreadOpen = !!source && !!reading && reading.open;
 
 
   useFrame((state, dt) => {
     if (!group.current) return;
     if (autoRotate) group.current.rotation.y += dt * 0.16;
+    // gentle float so the highlights travel across the cloth
+    group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
 
     reading?.step(dt);
     const open = reading?.motion.current.open ?? 0;
-    const p0x = caseJoint.jointX;
-    const p0z = m.T / 2;
-    if (frontPivot.current) {
-      frontPivot.current.position.x = p0x + (-flatSpineLength) * open;
-      frontPivot.current.position.z = p0z + (-m.T) * open;
-    }
+    // the front board swings about its own joint, on the front face
     if (frontCover.current) frontCover.current.rotation.y = -Math.PI * open;
-    const distance = Math.max(1, state.camera.position.distanceTo(group.current.getWorldPosition(new THREE.Vector3())));
-    const perspective = state.camera as THREE.PerspectiveCamera;
-    const visibleHeight = 2 * Math.tan(THREE.MathUtils.degToRad(perspective.fov) / 2) * distance;
-    const visibleWidth = visibleHeight * perspective.aspect;
-    const openSpan = Math.max(0.1, 2 * (m.W / 2 - gutterX));
-    const openFit = Math.min(0.62, (0.9 * visibleWidth) / openSpan);
-    const scale = 1 + (openFit - 1) * open;
-    group.current.scale.setScalar(scale);
-    group.current.position.x = -gutterX * open * scale;
-    group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
-    group.current.rotation.x = -0.42 * open;
-    const showOpen = !!source && open > 0.015;
-    if (closedBlock.current) closedBlock.current.visible = !showOpen;
-    // the block's glued back edge tracks the spine backing in lockstep with
-    // the spine mesh (which unrolls linearly in `open`)
-    const pageSpineX = m.pageCX - m.pw / 2;
-    const rootX = pageSpineX + (gutterX - pageSpineX) * open;
-    const floorZ = -m.T / 2 + c.boardThickness + m.pt / 2;
-    const rootZ = floorZ * smoothstep(open);
-    if (openBlock.current) {
-      openBlock.current.visible = showOpen;
-      openBlock.current.position.x = rootX;
-      openBlock.current.position.z = rootZ;
-      openBlock.current.scale.x = m.pw / openPageWidth + (1 - m.pw / openPageWidth) * open;
-    }
-
-    // flexible joint fold: from the front pastedown's inner edge to the
-    // shoulder of the page block, bending as the cover swings
-    const hinge = hingeMesh.current;
-    if (hinge) {
-      hinge.visible = showOpen;
-      const angle = -Math.PI * open;
-      const cs = Math.cos(angle), sn = Math.sin(angle);
-      const dx = 0.05, dz = -c.boardThickness - 0.0012;
-      const ax = p0x - flatSpineLength * open + cs * dx + sn * dz;
-      const az = p0z - m.T * open - sn * dx + cs * dz;
-      const bx = rootX + 0.002;
-      const bz = rootZ - m.pt / 2 + 0.0015;
-      const cx = (ax + bx) / 2 - 0.03 * Math.sin(Math.PI * open);
-      const cz = Math.max(az, bz) + 0.02 * Math.sin(Math.PI * open);
-      const pos = hinge.geometry.getAttribute("position") as THREE.BufferAttribute;
-      const arr = pos.array as Float32Array;
-      const halfH = (m.H - 0.07) / 2;
-      for (let i = 0; i <= HINGE_SEG; i++) {
-        const t = i / HINGE_SEG, u = 1 - t;
-        const x = u * u * ax + 2 * u * t * cx + t * t * bx;
-        const z = u * u * az + 2 * u * t * cz + t * t * bz;
-        arr.set([x, halfH, z, x, -halfH, z], i * 6);
-      }
-      pos.needsUpdate = true;
-      hinge.geometry.computeVertexNormals();
-      hinge.geometry.computeBoundingSphere();
-    }
-
-    const mesh = spineMesh.current;
-    if (mesh) {
-      mesh.frustumCulled = false;
-      const position = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
-      const target = position.array as Float32Array;
-      const { rest, flat } = spineBuffers;
-      if (open <= 0) target.set(rest);
-      else if (open >= 1) target.set(flat);
-      else {
-        const fade = 1 - smoothstep(clamp01((open - 0.75) / 0.25));
-        const angle = -Math.PI * open;
-        const cosine = Math.cos(angle);
-        const sine = Math.sin(angle);
-        for (let i = 0; i < rest.length; i += 3) {
-          const restX = rest[i] ?? 0;
-          const restY = rest[i + 1] ?? 0;
-          const restZ = rest[i + 2] ?? 0;
-          const s = clamp01((restZ + innerHalf) / Math.max(1e-4, 2 * innerHalf));
-          const frontWeight = smoothstep(clamp01((s - 0.4) / 0.6)) * fade;
-          const dx = restX - p0x;
-          const dz = restZ - p0z;
-          const rigidX = p0x - flatSpineLength * open + cosine * dx + sine * dz;
-          const rigidZ = p0z - m.T * open - sine * dx + cosine * dz;
-          const baseX = restX + ((flat[i] ?? restX) - restX) * open;
-          const baseZ = restZ + ((flat[i + 2] ?? restZ) - restZ) * open;
-          target[i] = baseX + (rigidX - baseX) * frontWeight;
-          target[i + 1] = restY;
-          target[i + 2] = baseZ + (rigidZ - baseZ) * frontWeight;
-        }
-      }
-      position.needsUpdate = true;
-      mesh.geometry.computeVertexNormals();
-      mesh.geometry.computeBoundingSphere();
-    }
+    // ...and the whole book slides back to stay centred as it opens out
+    if (recentre.current) recentre.current.position.x = (m.W / 2) * open;
+    // an open book is twice as wide, so pull it back into frame
+    const s = 1 - 0.44 * open;
+    group.current.scale.setScalar(s);
+    if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
+    if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
   });
 
   const quillProps = {
@@ -625,9 +503,10 @@ export function Book({
 
   return (
     <group ref={group}>
+      <group ref={recentre}>
         {/* front board + its artwork and quill, hinged at the joint so the whole
          * cover swings open together */}
-        <group ref={frontPivot} position={[caseJoint.jointX, 0, m.T / 2]}>
+        <group position={[joint(c).jointX, 0, m.T / 2]}>
           <group ref={frontCover}>
             <group position={[-joint(c).jointX, 0, -m.T / 2]}>
               <mesh
@@ -638,15 +517,6 @@ export function Book({
                 receiveShadow
                 onDoubleClick={toggle}
               />
-              {/* front pastedown endpaper on the inner face of the board */}
-              <mesh
-                position={[(caseJoint.jointX + m.W / 2) / 2, 0, m.T / 2 - c.boardThickness - 0.0012]}
-                rotation={[0, Math.PI, 0]}
-                receiveShadow
-              >
-                <planeGeometry args={[Math.max(0.1, m.W / 2 - caseJoint.jointX - 0.05), m.H - 0.07]} />
-                <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} />
-              </mesh>
               {/* front cover artwork — stops short of the joint groove */}
               {frontTex && (
                 <mesh position={[m.panelCX, 0, m.T / 2 + 0.004]}>
@@ -681,17 +551,8 @@ export function Book({
           receiveShadow
           onDoubleClick={toggle}
         />
-        {/* back pastedown endpaper */}
-        <mesh position={[(caseJoint.jointX + m.W / 2) / 2, 0, -m.T / 2 + c.boardThickness + 0.0012]} receiveShadow>
-          <planeGeometry args={[Math.max(0.1, m.W / 2 - caseJoint.jointX - 0.05), m.H - 0.07]} />
-          <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} />
-        </mesh>
-        <mesh ref={hingeMesh} geometry={hingeGeo} visible={false} frustumCulled={false} receiveShadow>
-          <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} side={THREE.DoubleSide} />
-        </mesh>
         {/* spine / edge bridge */}
         <mesh
-          ref={spineMesh}
           name="spine"
           geometry={spineGeo}
           material={spineMaterial}
@@ -707,12 +568,14 @@ export function Book({
 
         {/* with a PDF imported, the block becomes two bendable halves and the
          * leaf that is turning, hinged on the spine */}
-        <group position={[gutterX, m.pageCY, 0]} ref={openBlock} visible={false}>
+        <group position={[m.pageCX - m.pw / 2, m.pageCY, 0]} ref={openBlock} visible={false}>
           {source && reading && spreadOpen && (
             <OpenBook
-              width={openPageWidth}
+              width={m.pw}
               height={m.ph}
               thickness={m.pt}
+              caseHalf={m.T / 2}
+              board={c.boardThickness}
               source={source}
               motion={reading.motion}
               spread={reading.spread}
@@ -772,6 +635,7 @@ export function Book({
         <planeGeometry args={[Math.min(0.3, m.T * 0.7), Math.min(0.3, m.T * 0.7)]} />
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>}
+      </group>
     </group>
   );
 }

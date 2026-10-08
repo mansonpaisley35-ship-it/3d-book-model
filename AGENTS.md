@@ -9,7 +9,4 @@
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
 - Imported books (PDF, cover images, look, pose) are stored in browser IndexedDB via src/components/book/library.ts — user chose browser-only storage, no sign-in.
-- The open-book rig is analytic: curved stack polylines and a lagged ribbon leaf share an exact fixed gutter, while critically damped springs preserve opening and drag-release velocity.
-- The existing board, spine-shell, joint, metrics, materials, lighting, camera, PDF source, and export systems are immutable inputs to open-state animation.
-- Open page stacks are watertight strip-built prisms; the left stack hinges about the block's mid-thickness so closed it lies on the right stack, and stack crest is scaled by flatteningFactor (flat at mid-book). Why: no fan-triangulation holes, no floating block, Option A profile.
-- The open page block's root tracks the unrolling spine backing (x linear in open, z eased to the back board's inner face) and a per-frame endpaper fold bridges the front pastedown to the block. Why: the block stays glued to the spine with no protrusion or hollow hinge.
+- Page turning uses a fixed spine pivot for the reversible 180° host sweep; its X-axis bone chain adds only a travelling crease and never translates in Z.

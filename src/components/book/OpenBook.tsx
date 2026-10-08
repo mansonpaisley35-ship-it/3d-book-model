@@ -1,285 +1,193 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { BookMotion, TurnDir } from "./book-state";
 import type { PdfBookSource } from "./pdf-source";
-import {
-  PAGE_SEGMENTS,
-  clamp01,
-  flatteningFactor,
-  leafCurve,
-  openingCurve,
-  restingCurve,
-  smoothstep,
-  type Point2,
-} from "./page-rig-math";
+import { createSkinnedPage } from "./skinned-page";
 
-const HEIGHT_ROWS = 8;
-const FACE_OFFSET = 0.0015;
+function pageShape(width: number, height: number, radius: number) {
+  const r = Math.min(radius, width * 0.08, height * 0.08);
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -height / 2);
+  shape.lineTo(width - r, -height / 2);
+  shape.quadraticCurveTo(width, -height / 2, width, -height / 2 + r);
+  shape.lineTo(width, height / 2 - r);
+  shape.quadraticCurveTo(width, height / 2, width - r, height / 2);
+  shape.lineTo(0, height / 2);
+  shape.closePath();
+  return shape;
+}
 
-/**
- * Watertight page block between a base polyline and a top polyline that share
- * column count. Head/tail caps are quad strips (never fans), so concave crests
- * cannot produce overlapping or inverted triangles.
- */
-function buildPrism(base: readonly Point2[], top: readonly Point2[], pageHeight: number) {
-  const positions: number[] = [];
-  const h = pageHeight / 2;
-  const tri = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
-  const quad = (a: number[], b: number[], c: number[], d: number[]) => {
-    tri(a, b, c);
-    tri(a, c, d);
-  };
-  const n = Math.min(base.length, top.length);
-  const v = (p: Point2, y: number) => [p.x, y, p.z];
-  for (let i = 0; i < n - 1; i += 1) {
-    const b0 = base[i]!, b1 = base[i + 1]!, t0 = top[i]!, t1 = top[i + 1]!;
-    // head and tail caps
-    quad(v(b0, h), v(b1, h), v(t1, h), v(t0, h));
-    quad(v(b0, -h), v(t0, -h), v(t1, -h), v(b1, -h));
-    // underside (rests on the board / spine backing)
-    quad(v(b0, -h), v(b1, -h), v(b1, h), v(b0, h));
-    // top surface beneath the printed page ribbon
-    quad(v(t0, -h), v(t0, h), v(t1, h), v(t1, -h));
-  }
-  // spine wall and fore-edge wall
-  const s0 = base[0]!, s1 = top[0]!, f0 = base[n - 1]!, f1 = top[n - 1]!;
-  quad(v(s0, -h), v(s0, h), v(s1, h), v(s1, -h));
-  quad(v(f0, -h), v(f1, -h), v(f1, h), v(f0, h));
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+function buildPageStack(width: number, height: number, thickness: number) {
+  const geometry = new THREE.ExtrudeGeometry(pageShape(width, height, 0.035), {
+    depth: thickness,
+    curveSegments: 8,
+    bevelEnabled: true,
+    bevelSize: Math.min(0.012, thickness * 0.12),
+    bevelThickness: Math.min(0.008, thickness * 0.1),
+    bevelSegments: 2,
+  });
+  geometry.translate(0, 0, -thickness / 2);
   geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
   return geometry;
 }
 
-function surfaceNormal(points: readonly Point2[], index: number) {
-  const before = points[Math.max(0, index - 1)] ?? points[0] ?? { x: 0, z: 0 };
-  const after = points[Math.min(points.length - 1, index + 1)] ?? before;
-  const dx = after.x - before.x;
-  const dz = after.z - before.z;
-  const length = Math.hypot(dx, dz) || 1;
-  return { x: -dz / length, z: dx / length };
-}
-
-function buildRibbon(points: readonly Point2[], height: number, mirrored: boolean, offset: number) {
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const indices: number[] = [];
-  for (let row = 0; row <= HEIGHT_ROWS; row += 1) {
-    const v = row / HEIGHT_ROWS;
-    const y = (v - 0.5) * height;
-    for (let j = 0; j < points.length; j += 1) {
-      const point = points[j] ?? { x: 0, z: 0 };
-      const normal = surfaceNormal(points, j);
-      positions.push(point.x + normal.x * offset, y, point.z + normal.z * offset);
-      uvs.push(mirrored ? 1 - j / (points.length - 1) : j / (points.length - 1), v);
-    }
+function buildPageFace(width: number, height: number) {
+  const geometry = new THREE.ShapeGeometry(pageShape(width, height, 0.035), 8);
+  const position = geometry.getAttribute("position");
+  const uv = geometry.getAttribute("uv");
+  for (let i = 0; i < position.count; i += 1) {
+    uv.setXY(i, position.getX(i) / width, position.getY(i) / height + 0.5);
   }
-  const columns = points.length;
-  for (let row = 0; row < HEIGHT_ROWS; row += 1) {
-    for (let j = 0; j < columns - 1; j += 1) {
-      const a = row * columns + j;
-      const b = a + columns;
-      if (mirrored) indices.push(a, a + 1, b, a + 1, b + 1, b);
-      else indices.push(a, b, a + 1, a + 1, b, b + 1);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
+  uv.needsUpdate = true;
   return geometry;
 }
-
-function writeRibbon(
-  geometry: THREE.BufferGeometry,
-  points: readonly Point2[],
-  height: number,
-  offset: number,
-  twist: number,
-) {
-  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-  for (let row = 0; row <= HEIGHT_ROWS; row += 1) {
-    const v = row / HEIGHT_ROWS;
-    const y = (v - 0.5) * height;
-    for (let j = 0; j < points.length; j += 1) {
-      const point = points[j] ?? { x: 0, z: 0 };
-      const normal = surfaceNormal(points, j);
-      const u = j / (points.length - 1);
-      const corner = twist * (v - 0.5) * u * u;
-      position.setXYZ(
-        row * points.length + j,
-        point.x + normal.x * offset,
-        y,
-        point.z + normal.z * offset + corner,
-      );
-    }
-  }
-  position.needsUpdate = true;
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-}
-
-type StackProps = {
-  name: string;
-  points: Point2[];
-  base: Point2[];
-  thickness: number;
-  visible: boolean;
-  height: number;
-  texture: THREE.Texture | null;
-  mirrored: boolean;
-  paperColor: string;
-  onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
-};
 
 function PageStack({
   name,
-  points,
-  base,
-  thickness,
-  visible,
+  side,
+  width,
   height,
+  thickness,
+  z,
   texture,
-  mirrored,
   paperColor,
   onPointerDown,
-}: StackProps) {
-  const prism = useMemo(
-    () => buildPrism(base, points, height),
-    [base, height, points],
+}: {
+  name: string;
+  side: -1 | 1;
+  width: number;
+  height: number;
+  thickness: number;
+  z: number;
+  texture: THREE.Texture | null;
+  paperColor: string;
+  onPointerDown: (e: { nativeEvent: PointerEvent; stopPropagation: () => void }) => void;
+}) {
+  const stackGeometry = useMemo(
+    () => buildPageStack(width, height, thickness),
+    [width, height, thickness],
   );
-  const face = useMemo(() => buildRibbon(points, height, mirrored, FACE_OFFSET), [points, height, mirrored]);
+  const faceGeometry = useMemo(() => buildPageFace(width, height), [width, height]);
+  const displayTexture = useMemo(() => {
+    if (!texture || side > 0) return texture;
+    const clone = texture.clone();
+    clone.wrapS = THREE.RepeatWrapping;
+    clone.repeat.x = -1;
+    clone.offset.x = 1;
+    clone.needsUpdate = true;
+    return clone;
+  }, [texture, side]);
   const edgeMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.95, metalness: 0, side: THREE.DoubleSide }),
+    () => new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98, metalness: 0 }),
     [paperColor],
   );
   const faceMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
         color: paperColor,
-        map: texture,
+        map: displayTexture,
         roughness: 0.94,
         metalness: 0,
-        side: THREE.DoubleSide,
+        side: side < 0 ? THREE.BackSide : THREE.FrontSide,
         polygonOffset: true,
         polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
       }),
-    [paperColor, texture],
+    [paperColor, displayTexture],
   );
 
   useEffect(
     () => () => {
-      prism.dispose();
-      face.dispose();
+      stackGeometry.dispose();
+      faceGeometry.dispose();
+      if (displayTexture && displayTexture !== texture) displayTexture.dispose();
       edgeMaterial.dispose();
       faceMaterial.dispose();
     },
-    [prism, face, edgeMaterial, faceMaterial],
+    [stackGeometry, faceGeometry, displayTexture, texture, edgeMaterial, faceMaterial],
   );
 
   return (
-    <group visible={visible && thickness > 0.0001}>
-      <mesh name={name} geometry={prism} material={edgeMaterial} castShadow receiveShadow onPointerDown={onPointerDown} />
+    <group position={[0, 0, z]} rotation-y={side < 0 ? Math.PI : 0}>
+      <mesh name={name} geometry={stackGeometry} material={edgeMaterial} castShadow receiveShadow />
       <mesh
         name={`${name}Page`}
-        geometry={face}
+        geometry={faceGeometry}
         material={faceMaterial}
+        position-z={side < 0 ? -thickness / 2 - 0.002 : thickness / 2 + 0.002}
+        onPointerDown={onPointerDown as never}
         castShadow
         receiveShadow
-        onPointerDown={onPointerDown}
       />
     </group>
   );
 }
 
-function TurningLeaf({
+/**
+ * The leaf currently turning: a skinned page whose root bone sits ON the spine,
+ * so it can never separate from the binding. The host pivots at one fixed
+ * spine plane while the skin adds the travelling crease.
+ */
+function SkinnedTurningPage({
   width,
   height,
-  baseZ,
-  leftBefore,
-  rightBefore,
-  leftAfter,
-  rightAfter,
+  thickness,
+  spineZ,
   motion,
   direction,
-  frontTexture,
-  backTexture,
-  paperColor,
-  onPointerDown,
+  materials,
 }: {
   width: number;
   height: number;
-  baseZ: number;
-  leftBefore: number;
-  rightBefore: number;
-  leftAfter: number;
-  rightAfter: number;
+  thickness: number;
+  spineZ: number;
   motion: React.MutableRefObject<BookMotion>;
   direction: TurnDir;
-  frontTexture: THREE.Texture | null;
-  backTexture: THREE.Texture | null;
-  paperColor: string;
-  onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
+  materials: THREE.Material[];
 }) {
-  const fBefore = flatteningFactor(leftBefore, rightBefore);
-  const fAfter = flatteningFactor(leftAfter, rightAfter);
-  const startLeft = useMemo(() => restingCurve(0, baseZ, width, leftBefore, fBefore, -1).points, [baseZ, width, leftBefore, fBefore]);
-  const startRight = useMemo(() => restingCurve(0, baseZ, width, rightBefore, fBefore, 1).points, [baseZ, width, rightBefore, fBefore]);
-  const endLeft = useMemo(() => restingCurve(0, baseZ, width, leftAfter, fAfter, -1).points, [baseZ, width, leftAfter, fAfter]);
-  const endRight = useMemo(() => restingCurve(0, baseZ, width, rightAfter, fAfter, 1).points, [baseZ, width, rightAfter, fAfter]);
-  const source = direction > 0 ? startRight : startLeft;
-  const initial = useMemo(() => source.map((point) => ({ ...point })), [source]);
-  const frontGeometry = useMemo(() => buildRibbon(initial, height, false, 0.0006), [initial, height]);
-  const backGeometry = useMemo(() => buildRibbon(initial, height, true, -0.0006), [initial, height]);
-  const frontMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: paperColor, map: frontTexture, roughness: 0.94, side: THREE.FrontSide }),
-    [paperColor, frontTexture],
-  );
-  const backMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: paperColor, map: backTexture, roughness: 0.94, side: THREE.BackSide }),
-    [paperColor, backTexture],
+  const host = useRef<THREE.Group>(null);
+  // the rig depends only on the page size: refreshed PDF textures swap the
+  // materials in place instead of rebuilding geometry, bones and skeleton
+  const page = useMemo(
+    () => createSkinnedPage(width, height, thickness, materials),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [width, height, thickness],
   );
 
-  useEffect(
-    () => () => {
-      frontGeometry.dispose();
-      backGeometry.dispose();
-      frontMaterial.dispose();
-      backMaterial.dispose();
-    },
-    [frontGeometry, backGeometry, frontMaterial, backMaterial],
-  );
+  useEffect(() => {
+    page.mesh.material = materials;
+  }, [page, materials]);
+
+  useEffect(() => {
+    const group = host.current;
+    if (!group) return;
+    group.add(page.mesh);
+    return () => {
+      group.remove(page.mesh);
+      page.dispose();
+    };
+  }, [page]);
 
   useFrame(() => {
-    const t = clamp01(motion.current.turn);
-    const speedNorm = clamp01(Math.abs(motion.current.turnVelocity) / 2.4);
-    const lag = 0.18 + 0.42 * speedNorm;
-    const right = direction > 0 ? startRight : endRight;
-    const left = direction > 0 ? endLeft : startLeft;
-    const points = leafCurve(right, left, t, lag, direction);
-    const twist = 0.16 * Math.sin(Math.PI * t) * (0.4 + 0.6 * speedNorm) * direction;
-    writeRibbon(frontGeometry, points, height, 0.0006, twist);
-    writeRibbon(backGeometry, points, height, -0.0006, twist);
+    const group = host.current;
+    if (!group) return;
+    const p = Math.min(1, Math.max(0, motion.current.turn));
+    // The root stays fixed at the binding. The host supplies the rigid sweep;
+    // the skin contributes only the temporary crease and gutter roll.
+    group.position.z = spineZ;
+    group.rotation.y = direction === 1 ? -Math.PI * p : -Math.PI + Math.PI * p;
+    page.update(p, direction);
   });
 
-  return (
-    <group>
-      <mesh geometry={frontGeometry} material={frontMaterial} frustumCulled={false} castShadow receiveShadow onPointerDown={onPointerDown} />
-      <mesh geometry={backGeometry} material={backMaterial} frustumCulled={false} castShadow receiveShadow onPointerDown={onPointerDown} />
-    </group>
-  );
+  return <group ref={host} position-z={spineZ} />;
 }
 
 export function OpenBook({
   width,
   height,
   thickness,
+  caseHalf,
+  board,
   source,
   motion,
   spread,
@@ -293,6 +201,8 @@ export function OpenBook({
   width: number;
   height: number;
   thickness: number;
+  caseHalf: number;
+  board: number;
   source: PdfBookSource;
   motion: React.MutableRefObject<BookMotion>;
   spread: number;
@@ -300,146 +210,115 @@ export function OpenBook({
   turnDir: TurnDir | null;
   paperColor: string;
   onTurn: (dir: TurnDir, drag?: boolean) => boolean;
-  setDrag: (progress: number, velocity?: number) => void;
+  setDrag: (progress: number) => void;
   releaseDrag: () => void;
 }) {
   const [revision, setRevision] = useState(0);
-  const [, setFrameRevision] = useState(0);
-  const geometryKey = useRef("");
-  const ready = useCallback(() => setRevision((value) => value + 1), []);
+  const ready = () => setRevision((value) => value + 1);
   const page = (index: number) => source.getTexture(index, ready);
-  const totalLeaves = Math.max(1, spreadCount - 1);
-  const quantizedTurn = Math.round(motion.current.turn * 80) / 80;
-  const progress = turnDir ? smoothstep(quantizedTurn) : 0;
-  const transfer = turnDir ? turnDir * progress : 0;
-  const leafThickness = thickness / totalLeaves;
-  const leftLeaves = Math.max(0.3, spread + transfer);
-  const rightLeaves = Math.max(0.3, totalLeaves - spread - transfer);
-  const leftThickness = Math.min(thickness, leftLeaves * leafThickness);
-  const rightThickness = Math.min(thickness, rightLeaves * leafThickness);
-  const baseZ = -thickness / 2;
-  const quantizedOpen = Math.round(motion.current.open * 80) / 80;
-  const curvature = quantizedOpen * flatteningFactor(leftLeaves, rightLeaves);
-  const pivotLift = (leftThickness + rightThickness) / 2;
-  const { leftCurve, leftBase } = useMemo(() => {
-    const top = restingCurve(0, baseZ, width, leftThickness, curvature, -1).points;
-    const flatBase = top.map((point) => ({ x: point.x, z: baseZ }));
-    return {
-      leftCurve: openingCurve(top, quantizedOpen, pivotLift),
-      leftBase: openingCurve(flatBase, quantizedOpen, pivotLift),
-    };
-  }, [baseZ, width, leftThickness, curvature, quantizedOpen, pivotLift]);
-  const { rightCurve, rightBase } = useMemo(() => {
-    const top = restingCurve(0, baseZ, width, rightThickness, curvature, 1).points;
-    return { rightCurve: top, rightBase: top.map((point) => ({ x: point.x, z: baseZ })) };
-  }, [baseZ, width, rightThickness, curvature]);
+  const k = spread;
+  const leftPage = turnDir === -1 ? Math.max(1, 2 * k - 1) : 2 * k + 1;
+  const rightPage = turnDir === 1 ? 2 * k + 4 : 2 * k + 2;
+  const fraction = spreadCount > 0 ? (k + 1) / (spreadCount + 1) : 0.5;
+  const minThickness = Math.max(0.012, thickness * 0.018);
+  const leftThickness = Math.max(minThickness, thickness * fraction);
+  const rightThickness = Math.max(minThickness, thickness * (1 - fraction));
+  const leafThickness = Math.max(0.004, thickness * 0.006);
+  const leftBase = caseHalf + board;
+  const rightBase = -caseHalf + board;
+  const leftZ = leftBase + leftThickness / 2;
+  const rightZ = rightBase + rightThickness / 2;
 
-  useFrame(() => {
-    const key = `${Math.round(motion.current.open * 80)}:${turnDir ? Math.round(motion.current.turn * 80) : 0}:${spread}:${turnDir ?? 0}`;
-    if (key === geometryKey.current) return;
-    geometryKey.current = key;
-    setFrameRevision((value) => value + 1);
-  });
+  const turnMaterials = useMemo(() => {
+    const frontIndex = turnDir === 1 ? 2 * k + 2 : 2 * k;
+    const backIndex = turnDir === 1 ? 2 * k + 3 : 2 * k + 1;
+    const edge = new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98 });
+    const front = new THREE.MeshStandardMaterial({
+      color: paperColor,
+      map: page(frontIndex),
+      roughness: 0.94,
+    });
+    const back = new THREE.MeshStandardMaterial({
+      color: paperColor,
+      map: page(backIndex),
+      roughness: 0.94,
+    });
+    return [edge, edge, edge, edge, front, back];
+    // revision intentionally refreshes the materials when a PDF page finishes rendering
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnDir, k, source, paperColor, revision]);
 
-  const drag = useRef<{
-    dir: TurnDir;
-    x0: number;
-    lastX: number;
-    lastTime: number;
-    moved: boolean;
-  } | null>(null);
+  useEffect(
+    () => () => {
+      new Set(turnMaterials).forEach((material) => material.dispose());
+    },
+    [turnMaterials],
+  );
+
+  const drag = useRef<{ dir: TurnDir; x0: number; moved: boolean } | null>(null);
   useEffect(() => {
-    const finish = (cancelled: boolean) => {
-      const active = drag.current;
-      drag.current = null;
-      if (!active) return;
-      if (!active.moved && !cancelled) setDrag(1, 0);
-      releaseDrag();
-    };
     const move = (event: PointerEvent) => {
       const active = drag.current;
       if (!active) return;
       const dx = event.clientX - active.x0;
-      if (Math.abs(dx) > 7) active.moved = true;
-      const now = event.timeStamp;
-      const dt = Math.max(1, now - active.lastTime) / 1000;
-      const signedDelta = active.dir > 0 ? -(event.clientX - active.lastX) : event.clientX - active.lastX;
-      const span = Math.max(160, window.innerWidth * 0.32);
-      setDrag((active.dir > 0 ? -dx : dx) / span, signedDelta / span / dt);
-      active.lastX = event.clientX;
-      active.lastTime = now;
+      if (Math.abs(dx) > 5) active.moved = true;
+      setDrag(active.dir === 1 ? -dx / 260 : dx / 260);
     };
-    const up = () => finish(false);
-    const cancel = () => finish(true);
+    const up = () => {
+      const active = drag.current;
+      drag.current = null;
+      if (!active) return;
+      if (!active.moved) setDrag(1);
+      releaseDrag();
+    };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", cancel);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", cancel);
     };
-  }, [releaseDrag, setDrag]);
+  }, [setDrag, releaseDrag]);
 
   const grab =
-    (direction: TurnDir) => (event: ThreeEvent<PointerEvent>) => {
+    (dir: TurnDir) => (event: { nativeEvent: PointerEvent; stopPropagation: () => void }) => {
       event.stopPropagation();
-      if (motion.current.open < 0.985 || !onTurn(direction, true)) return;
-      drag.current = {
-        dir: direction,
-        x0: event.nativeEvent.clientX,
-        lastX: event.nativeEvent.clientX,
-        lastTime: event.nativeEvent.timeStamp,
-        moved: false,
-      };
+      if (motion.current.open < 0.85 || !onTurn(dir, true)) return;
+      drag.current = { dir, x0: event.nativeEvent.clientX, moved: false };
     };
-
-  const leftPage = 2 * spread - 1;
-  const rightPage = 2 * spread;
-  const frontIndex = turnDir === 1 ? rightPage : leftPage;
-  const backIndex = turnDir === 1 ? rightPage + 1 : leftPage - 1;
 
   return (
     <group>
       <PageStack
         name="leftPageBlock"
-        points={leftCurve}
-        base={leftBase}
-        thickness={leftThickness}
-        visible={leftLeaves > 0.3001}
+        side={-1}
+        width={width}
         height={height}
-        texture={leftPage >= 0 ? page(leftPage) : null}
-        mirrored
+        thickness={leftThickness}
+        z={leftZ}
+        texture={page(leftPage)}
         paperColor={paperColor}
         onPointerDown={grab(-1)}
       />
       <PageStack
         name="rightPageBlock"
-        points={rightCurve}
-        base={rightBase}
-        thickness={rightThickness}
-        visible={rightLeaves > 0.3001}
+        side={1}
+        width={width}
         height={height}
+        thickness={rightThickness}
+        z={rightZ}
         texture={page(rightPage)}
-        mirrored={false}
         paperColor={paperColor}
         onPointerDown={grab(1)}
       />
       {turnDir && (
-        <TurningLeaf
+        <SkinnedTurningPage
           width={width}
           height={height}
-          baseZ={baseZ}
-          leftBefore={Math.max(0.3, spread) * leafThickness}
-          rightBefore={Math.max(0.3, totalLeaves - spread) * leafThickness}
-          leftAfter={Math.max(0.3, spread + turnDir) * leafThickness}
-          rightAfter={Math.max(0.3, totalLeaves - spread - turnDir) * leafThickness}
+          thickness={leafThickness}
+          spineZ={caseHalf}
           motion={motion}
           direction={turnDir}
-          frontTexture={page(frontIndex)}
-          backTexture={page(backIndex)}
-          paperColor={paperColor}
-          onPointerDown={grab(turnDir)}
+          materials={turnMaterials}
         />
       )}
     </group>

@@ -424,7 +424,6 @@ function blobUrls(covers: StoredBook["covers"]): BookImages {
 
 export default function BookScene() {
   const [free, setFree] = useState(false);
-  const bookGroup = useRef<THREE.Group>(null);
   const [view, setView] = useState<ViewKey>("cover");
   const [images, setImages] = useState<BookImages>({});
   const [adjusts, setAdjusts] = useState<BookAdjusts>({});
@@ -451,7 +450,7 @@ export default function BookScene() {
   const loadedRef = useRef<string | null>(null);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
-  const spreadCount = source ? Math.max(1, Math.ceil((source.pageCount - 2) / 2) + 1) : 0;
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
   const reading = useBookMotion(spreadCount, !!source && !configuring);
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
@@ -716,13 +715,8 @@ export default function BookScene() {
         dpr={[1, 2]}
         camera={{ position: [4.2, 1.9, 10.6], fov: 30 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+        onPointerDown={() => configuring && orbit && setFree(true)}
       >
-        <OrbitGate
-          target={bookGroup}
-          allowed={configuring ? orbit : true}
-          onlyBackground={!configuring}
-          onStart={() => setFree(true)}
-        />
         <color attach="background" args={["#0e1319"]} />
         <fog attach="fog" args={["#0e1319", 16, 30]} />
 
@@ -734,7 +728,6 @@ export default function BookScene() {
               spin={configuring && autoSpin}
               settle={settle}
             >
-              <group ref={bookGroup}>
               <Book
                 autoRotate={false}
                 images={images}
@@ -746,7 +739,6 @@ export default function BookScene() {
                 onActivate={activate}
                 onEdit={(slot) => configuring && openEditor(slot)}
               />
-              </group>
             </PoseRig>
           </group>
 
@@ -816,13 +808,12 @@ export default function BookScene() {
 
         <CameraRig view={configuring ? view : "cover"} active={!free} dist={fit.dist} />
         <OrbitControls
-          makeDefault
-          enabled={configuring ? orbit : true}
+          enabled={configuring && orbit && free}
           enablePan={false}
           minDistance={5}
           maxDistance={22}
-          minPolarAngle={0.05}
-          maxPolarAngle={Math.PI - 0.05}
+          minPolarAngle={0.15}
+          maxPolarAngle={Math.PI / 1.9}
           enableDamping
           dampingFactor={0.06}
         />
@@ -1480,42 +1471,4 @@ export default function BookScene() {
       )}
     </div>
   );
-}
-
-/** Decides, before OrbitControls sees the press, whether this drag may orbit. */
-function OrbitGate({
-  target,
-  allowed,
-  onlyBackground,
-  onStart,
-}: {
-  target: React.RefObject<THREE.Group | null>;
-  allowed: boolean;
-  onlyBackground: boolean;
-  onStart: () => void;
-}) {
-  const { gl, camera, controls } = useThree();
-  const start = useRef(onStart);
-  start.current = onStart;
-  useEffect(() => {
-    const el = gl.domElement;
-    const ray = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-    const down = (e: PointerEvent) => {
-      const c = controls as unknown as { enabled: boolean } | null;
-      if (!c) return;
-      let ok = allowed;
-      if (ok && onlyBackground && target.current) {
-        const r = el.getBoundingClientRect();
-        ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-        ray.setFromCamera(ndc, camera);
-        ok = ray.intersectObject(target.current, true).length === 0;
-      }
-      c.enabled = ok;
-      if (ok) start.current();
-    };
-    el.addEventListener("pointerdown", down, { capture: true });
-    return () => el.removeEventListener("pointerdown", down, { capture: true });
-  }, [gl, camera, controls, allowed, onlyBackground, target]);
-  return null;
 }
