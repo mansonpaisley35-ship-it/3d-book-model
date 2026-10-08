@@ -14,6 +14,8 @@ import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
 import { smoothstep } from "./page-rig-math";
 
+const HINGE_SEG = 14;
+
 export type Reading = ReturnType<typeof useBookMotion>;
 
 export type BookImages = {
@@ -458,6 +460,18 @@ export function Book({
   const spineMesh = useRef<THREE.Mesh>(null);
   const closedBlock = useRef<THREE.Group>(null);
   const openBlock = useRef<THREE.Group>(null);
+  const hingeMesh = useRef<THREE.Mesh>(null);
+  const hingeGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array((HINGE_SEG + 1) * 6), 3));
+    const idx: number[] = [];
+    for (let i = 0; i < HINGE_SEG; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    g.setIndex(idx);
+    return g;
+  }, []);
 
   // pages 1 and N are the covers, so the interior makes this many spreads
   const spreadCount = source ? Math.max(1, Math.ceil((source.pageCount - 2) / 2) + 1) : 0;
@@ -514,14 +528,45 @@ export function Book({
     group.current.rotation.x = -0.42 * open;
     const showOpen = !!source && open > 0.015;
     if (closedBlock.current) closedBlock.current.visible = !showOpen;
+    // the block's glued back edge tracks the spine backing in lockstep with
+    // the spine mesh (which unrolls linearly in `open`)
+    const pageSpineX = m.pageCX - m.pw / 2;
+    const rootX = pageSpineX + (gutterX - pageSpineX) * open;
+    const floorZ = -m.T / 2 + c.boardThickness + m.pt / 2;
+    const rootZ = floorZ * smoothstep(open);
     if (openBlock.current) {
       openBlock.current.visible = showOpen;
-      // glue the block's back edge to the spine: closed it sits where the
-      // closed block sits, open it lands on the unrolled spine backing
-      const e = smoothstep(open);
-      const pageSpineX = m.pageCX - m.pw / 2;
-      openBlock.current.position.x = pageSpineX + (gutterX - pageSpineX) * e;
-      openBlock.current.scale.x = m.pw / openPageWidth + (1 - m.pw / openPageWidth) * e;
+      openBlock.current.position.x = rootX;
+      openBlock.current.position.z = rootZ;
+      openBlock.current.scale.x = m.pw / openPageWidth + (1 - m.pw / openPageWidth) * open;
+    }
+
+    // flexible joint fold: from the front pastedown's inner edge to the
+    // shoulder of the page block, bending as the cover swings
+    const hinge = hingeMesh.current;
+    if (hinge) {
+      hinge.visible = showOpen;
+      const angle = -Math.PI * open;
+      const cs = Math.cos(angle), sn = Math.sin(angle);
+      const dx = 0.05, dz = -c.boardThickness - 0.0012;
+      const ax = p0x - flatSpineLength * open + cs * dx + sn * dz;
+      const az = p0z - m.T * open - sn * dx + cs * dz;
+      const bx = rootX + 0.002;
+      const bz = rootZ - m.pt / 2 + 0.0015;
+      const cx = (ax + bx) / 2 - 0.03 * Math.sin(Math.PI * open);
+      const cz = Math.max(az, bz) + 0.02 * Math.sin(Math.PI * open);
+      const pos = hinge.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const arr = pos.array as Float32Array;
+      const halfH = (m.H - 0.07) / 2;
+      for (let i = 0; i <= HINGE_SEG; i++) {
+        const t = i / HINGE_SEG, u = 1 - t;
+        const x = u * u * ax + 2 * u * t * cx + t * t * bx;
+        const z = u * u * az + 2 * u * t * cz + t * t * bz;
+        arr.set([x, halfH, z, x, -halfH, z], i * 6);
+      }
+      pos.needsUpdate = true;
+      hinge.geometry.computeVertexNormals();
+      hinge.geometry.computeBoundingSphere();
     }
 
     const mesh = spineMesh.current;
@@ -640,6 +685,9 @@ export function Book({
         <mesh position={[(caseJoint.jointX + m.W / 2) / 2, 0, -m.T / 2 + c.boardThickness + 0.0012]} receiveShadow>
           <planeGeometry args={[Math.max(0.1, m.W / 2 - caseJoint.jointX - 0.05), m.H - 0.07]} />
           <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} />
+        </mesh>
+        <mesh ref={hingeMesh} geometry={hingeGeo} visible={false} frustumCulled={false} receiveShadow>
+          <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} side={THREE.DoubleSide} />
         </mesh>
         {/* spine / edge bridge */}
         <mesh
