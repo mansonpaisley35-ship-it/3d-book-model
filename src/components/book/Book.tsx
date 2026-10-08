@@ -14,6 +14,8 @@ import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
 import { smoothstep } from "./page-rig-math";
 
+const HINGE_SEG = 14;
+
 export type Reading = ReturnType<typeof useBookMotion>;
 
 export type BookImages = {
@@ -683,6 +685,9 @@ export function Book({
         <mesh position={[(caseJoint.jointX + m.W / 2) / 2, 0, -m.T / 2 + c.boardThickness + 0.0012]} receiveShadow>
           <planeGeometry args={[Math.max(0.1, m.W / 2 - caseJoint.jointX - 0.05), m.H - 0.07]} />
           <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} />
+        </mesh>
+        <mesh ref={hingeMesh} geometry={hingeGeo} visible={false} frustumCulled={false} receiveShadow>
+          <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} side={THREE.DoubleSide} />
         </mesh>
         {/* spine / edge bridge */}
         <mesh
