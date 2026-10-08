@@ -134,9 +134,14 @@ export function leafCurve(
   return output;
 }
 
-/** The left stack follows the opening cover, occupying the closed right-hand path at open=0. */
-export function openingCurve(points: readonly Point2[], open: number) {
-  const root = points[0] ?? { x: 0, z: 0 };
+/**
+ * The left stack follows the opening cover. It rotates about a hinge raised
+ * `pivotLift` above its root, so at open=0 it lies face-down on top of the
+ * right stack (a closed block) and at open=1 it rests on the spine backing.
+ */
+export function openingCurve(points: readonly Point2[], open: number, pivotLift = 0) {
+  const base = points[0] ?? { x: 0, z: 0 };
+  const root = { x: base.x, z: base.z + pivotLift };
   const angle = Math.PI * (1 - clamp01(open));
   const cosine = Math.cos(angle);
   const sine = Math.sin(angle);
@@ -148,6 +153,16 @@ export function openingCurve(points: readonly Point2[], open: number) {
       z: root.z - sine * dx + cosine * dz,
     };
   });
+}
+
+/**
+ * Option A profile: the crest is strongest when the leaves are lopsided
+ * (first/last spreads) and relaxes toward a flat reading profile in the middle.
+ */
+export function flatteningFactor(leftLeaves: number, rightLeaves: number) {
+  const total = Math.max(1e-6, leftLeaves + rightLeaves);
+  const balance = Math.abs(leftLeaves - rightLeaves) / total;
+  return 1 - 0.75 * (1 - balance);
 }
 
 export type SpringState = { value: number; velocity: number };
