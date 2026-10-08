@@ -6,6 +6,7 @@ import type { PdfBookSource } from "./pdf-source";
 import {
   PAGE_SEGMENTS,
   clamp01,
+  flatteningFactor,
   leafCurve,
   openingCurve,
   restingCurve,
@@ -126,7 +127,7 @@ function writeRibbon(
 type StackProps = {
   name: string;
   points: Point2[];
-  baseZ: number;
+  base: Point2[];
   thickness: number;
   visible: boolean;
   height: number;
@@ -139,7 +140,7 @@ type StackProps = {
 function PageStack({
   name,
   points,
-  baseZ,
+  base,
   thickness,
   visible,
   height,
@@ -149,12 +150,12 @@ function PageStack({
   onPointerDown,
 }: StackProps) {
   const prism = useMemo(
-    () => buildPrism(baseZ, thickness, height, points),
-    [baseZ, thickness, height, points],
+    () => buildPrism(base, points, height),
+    [base, height, points],
   );
   const face = useMemo(() => buildRibbon(points, height, mirrored, FACE_OFFSET), [points, height, mirrored]);
   const edgeMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.98, metalness: 0 }),
+    () => new THREE.MeshStandardMaterial({ color: paperColor, roughness: 0.95, metalness: 0, side: THREE.DoubleSide }),
     [paperColor],
   );
   const faceMaterial = useMemo(
@@ -226,10 +227,12 @@ function TurningLeaf({
   paperColor: string;
   onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
 }) {
-  const startLeft = useMemo(() => openingCurve(restingCurve(0, baseZ, width, leftBefore, 1, -1).points, 1), [baseZ, width, leftBefore]);
-  const startRight = useMemo(() => restingCurve(0, baseZ, width, rightBefore, 1, 1).points, [baseZ, width, rightBefore]);
-  const endLeft = useMemo(() => openingCurve(restingCurve(0, baseZ, width, leftAfter, 1, -1).points, 1), [baseZ, width, leftAfter]);
-  const endRight = useMemo(() => restingCurve(0, baseZ, width, rightAfter, 1, 1).points, [baseZ, width, rightAfter]);
+  const fBefore = flatteningFactor(leftBefore, rightBefore);
+  const fAfter = flatteningFactor(leftAfter, rightAfter);
+  const startLeft = useMemo(() => restingCurve(0, baseZ, width, leftBefore, fBefore, -1).points, [baseZ, width, leftBefore, fBefore]);
+  const startRight = useMemo(() => restingCurve(0, baseZ, width, rightBefore, fBefore, 1).points, [baseZ, width, rightBefore, fBefore]);
+  const endLeft = useMemo(() => restingCurve(0, baseZ, width, leftAfter, fAfter, -1).points, [baseZ, width, leftAfter, fAfter]);
+  const endRight = useMemo(() => restingCurve(0, baseZ, width, rightAfter, fAfter, 1).points, [baseZ, width, rightAfter, fAfter]);
   const source = direction > 0 ? startRight : startLeft;
   const initial = useMemo(() => source.map((point) => ({ ...point })), [source]);
   const frontGeometry = useMemo(() => buildRibbon(initial, height, false, 0.0006), [initial, height]);
@@ -316,14 +319,20 @@ export function OpenBook({
   const rightThickness = Math.min(thickness, rightLeaves * leafThickness);
   const baseZ = -thickness / 2;
   const quantizedOpen = Math.round(motion.current.open * 80) / 80;
-  const leftCurve = useMemo(
-    () => openingCurve(restingCurve(0, baseZ, width, leftThickness, quantizedOpen, -1).points, quantizedOpen),
-    [baseZ, width, leftThickness, quantizedOpen],
-  );
-  const rightCurve = useMemo(
-    () => restingCurve(0, baseZ, width, rightThickness, quantizedOpen, 1).points,
-    [baseZ, width, rightThickness, quantizedOpen],
-  );
+  const curvature = quantizedOpen * flatteningFactor(leftLeaves, rightLeaves);
+  const pivotLift = (leftThickness + rightThickness) / 2;
+  const { leftCurve, leftBase } = useMemo(() => {
+    const top = restingCurve(0, baseZ, width, leftThickness, curvature, -1).points;
+    const flatBase = top.map((point) => ({ x: point.x, z: baseZ }));
+    return {
+      leftCurve: openingCurve(top, quantizedOpen, pivotLift),
+      leftBase: openingCurve(flatBase, quantizedOpen, pivotLift),
+    };
+  }, [baseZ, width, leftThickness, curvature, quantizedOpen, pivotLift]);
+  const { rightCurve, rightBase } = useMemo(() => {
+    const top = restingCurve(0, baseZ, width, rightThickness, curvature, 1).points;
+    return { rightCurve: top, rightBase: top.map((point) => ({ x: point.x, z: baseZ })) };
+  }, [baseZ, width, rightThickness, curvature]);
 
   useFrame(() => {
     const key = `${Math.round(motion.current.open * 80)}:${turnDir ? Math.round(motion.current.turn * 80) : 0}:${spread}:${turnDir ?? 0}`;
@@ -395,7 +404,7 @@ export function OpenBook({
       <PageStack
         name="leftPageBlock"
         points={leftCurve}
-        baseZ={baseZ}
+        base={leftBase}
         thickness={leftThickness}
         visible={leftLeaves > 0.3001}
         height={height}
@@ -407,7 +416,7 @@ export function OpenBook({
       <PageStack
         name="rightPageBlock"
         points={rightCurve}
-        baseZ={baseZ}
+        base={rightBase}
         thickness={rightThickness}
         visible={rightLeaves > 0.3001}
         height={height}
