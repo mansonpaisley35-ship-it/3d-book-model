@@ -16,32 +16,40 @@ import {
 const HEIGHT_ROWS = 8;
 const FACE_OFFSET = 0.0015;
 
-function buildPrism(bottomZ: number, height: number, pageHeight: number, points: readonly Point2[]) {
-  const top = points;
-  const bottom = points.map((point) => ({ x: point.x, z: bottomZ }));
-  const polygon = [...bottom, ...top.slice().reverse()];
+/**
+ * Watertight page block between a base polyline and a top polyline that share
+ * column count. Head/tail caps are quad strips (never fans), so concave crests
+ * cannot produce overlapping or inverted triangles.
+ */
+function buildPrism(base: readonly Point2[], top: readonly Point2[], pageHeight: number) {
   const positions: number[] = [];
-  const indices: number[] = [];
-  const halfHeight = pageHeight / 2;
-
-  for (const y of [-halfHeight, halfHeight]) {
-    for (const point of polygon) positions.push(point.x, y, point.z);
+  const h = pageHeight / 2;
+  const tri = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
+  const quad = (a: number[], b: number[], c: number[], d: number[]) => {
+    tri(a, b, c);
+    tri(a, c, d);
+  };
+  const n = Math.min(base.length, top.length);
+  const v = (p: Point2, y: number) => [p.x, y, p.z];
+  for (let i = 0; i < n - 1; i += 1) {
+    const b0 = base[i]!, b1 = base[i + 1]!, t0 = top[i]!, t1 = top[i + 1]!;
+    // head and tail caps
+    quad(v(b0, h), v(b1, h), v(t1, h), v(t0, h));
+    quad(v(b0, -h), v(t0, -h), v(t1, -h), v(b1, -h));
+    // underside (rests on the board / spine backing)
+    quad(v(b0, -h), v(b1, -h), v(b1, h), v(b0, h));
+    // top surface beneath the printed page ribbon
+    quad(v(t0, -h), v(t0, h), v(t1, h), v(t1, -h));
   }
-  const ring = polygon.length;
-  for (let i = 0; i < ring; i += 1) {
-    const next = (i + 1) % ring;
-    indices.push(i, next, ring + i, next, ring + next, ring + i);
-  }
-  for (let i = 1; i < ring - 1; i += 1) {
-    indices.push(0, ring + i, i, ring, ring + i + 1, ring + i);
-  }
+  // spine wall and fore-edge wall
+  const s0 = base[0]!, s1 = top[0]!, f0 = base[n - 1]!, f1 = top[n - 1]!;
+  quad(v(s0, -h), v(s0, h), v(s1, h), v(s1, -h));
+  quad(v(f0, -h), v(f1, -h), v(f1, h), v(f0, h));
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  geometry.userData["height"] = height;
   return geometry;
 }
 
