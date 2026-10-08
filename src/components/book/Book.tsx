@@ -468,6 +468,7 @@ export function Book({
   const gutterX = caseJoint.jointX - flatSpineLength / 2;
   const pageForeX = m.pageCX + m.pw / 2;
   const openPageWidth = Math.max(0.3, pageForeX - gutterX);
+  const endpaperColor = useMemo(() => "#" + new THREE.Color(c.pageColor).multiplyScalar(0.93).getHexString(), [c.pageColor]);
   const spineBuffers = useMemo(() => {
     const rest = new Float32Array(spineGeo.getAttribute("position").array as ArrayLike<number>);
     const flat = new Float32Array(rest.length);
@@ -511,8 +512,17 @@ export function Book({
     group.current.position.x = -gutterX * open * scale;
     group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
     group.current.rotation.x = -0.42 * open;
-    if (closedBlock.current) closedBlock.current.visible = !source;
-    if (openBlock.current) openBlock.current.visible = !!source;
+    const showOpen = !!source && open > 0.015;
+    if (closedBlock.current) closedBlock.current.visible = !showOpen;
+    if (openBlock.current) {
+      openBlock.current.visible = showOpen;
+      // glue the block's back edge to the spine: closed it sits where the
+      // closed block sits, open it lands on the unrolled spine backing
+      const e = smoothstep(open);
+      const pageSpineX = m.pageCX - m.pw / 2;
+      openBlock.current.position.x = pageSpineX + (gutterX - pageSpineX) * e;
+      openBlock.current.scale.x = m.pw / openPageWidth + (1 - m.pw / openPageWidth) * e;
+    }
 
     const mesh = spineMesh.current;
     if (mesh) {
@@ -583,6 +593,15 @@ export function Book({
                 receiveShadow
                 onDoubleClick={toggle}
               />
+              {/* front pastedown endpaper on the inner face of the board */}
+              <mesh
+                position={[(caseJoint.jointX + m.W / 2) / 2, 0, m.T / 2 - c.boardThickness - 0.0012]}
+                rotation={[0, Math.PI, 0]}
+                receiveShadow
+              >
+                <planeGeometry args={[Math.max(0.1, m.W / 2 - caseJoint.jointX - 0.05), m.H - 0.07]} />
+                <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} />
+              </mesh>
               {/* front cover artwork — stops short of the joint groove */}
               {frontTex && (
                 <mesh position={[m.panelCX, 0, m.T / 2 + 0.004]}>
@@ -617,6 +636,11 @@ export function Book({
           receiveShadow
           onDoubleClick={toggle}
         />
+        {/* back pastedown endpaper */}
+        <mesh position={[(caseJoint.jointX + m.W / 2) / 2, 0, -m.T / 2 + c.boardThickness + 0.0012]} receiveShadow>
+          <planeGeometry args={[Math.max(0.1, m.W / 2 - caseJoint.jointX - 0.05), m.H - 0.07]} />
+          <meshStandardMaterial color={endpaperColor} roughness={0.92} metalness={0} />
+        </mesh>
         {/* spine / edge bridge */}
         <mesh
           ref={spineMesh}
