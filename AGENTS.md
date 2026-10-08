@@ -11,3 +11,4 @@
 - Imported books (PDF, cover images, look, pose) are stored in browser IndexedDB via src/components/book/library.ts — user chose browser-only storage, no sign-in.
 - The open-book rig is analytic: curved stack polylines and a lagged ribbon leaf share an exact fixed gutter, while critically damped springs preserve opening and drag-release velocity.
 - The existing board, spine-shell, joint, metrics, materials, lighting, camera, PDF source, and export systems are immutable inputs to open-state animation.
+- Open page stacks are watertight strip-built prisms; the left stack hinges about the block's mid-thickness so closed it lies on the right stack, and stack crest is scaled by flatteningFactor (flat at mid-book). Why: no fan-triangulation holes, no floating block, Option A profile.
