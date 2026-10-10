@@ -424,6 +424,7 @@ function blobUrls(covers: StoredBook["covers"]): BookImages {
 
 export default function BookScene() {
   const [free, setFree] = useState(false);
+  const [overBook, setOverBook] = useState(false);
   const [view, setView] = useState<ViewKey>("cover");
   const [images, setImages] = useState<BookImages>({});
   const [adjusts, setAdjusts] = useState<BookAdjusts>({});
@@ -715,13 +716,18 @@ export default function BookScene() {
         dpr={[1, 2]}
         camera={{ position: [4.2, 1.9, 10.6], fov: 30 }}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
-        onPointerDown={() => configuring && orbit && setFree(true)}
+        onPointerDown={() => (!configuring || orbit) && !overBook && setFree(true)}
       >
         <color attach="background" args={["#0e1319"]} />
         <fog attach="fog" args={["#0e1319", 16, 30]} />
 
         <Suspense fallback={null}>
-          <group position={[0, 0.15, 0]} scale={fit.scale}>
+          <group
+            position={[0, 0.15, 0]}
+            scale={fit.scale}
+            onPointerOver={() => setOverBook(true)}
+            onPointerOut={() => setOverBook(false)}
+          >
             <PoseRig
               pose={configuring ? pose : displayPose}
               lyingDrop={lyingDrop}
@@ -808,12 +814,12 @@ export default function BookScene() {
 
         <CameraRig view={configuring ? view : "cover"} active={!free} dist={fit.dist} />
         <OrbitControls
-          enabled={configuring && orbit && free}
+          enabled={!overBook && (!configuring || orbit)}
           enablePan={false}
           minDistance={5}
           maxDistance={22}
-          minPolarAngle={0.15}
-          maxPolarAngle={Math.PI / 1.9}
+          minPolarAngle={0}
+          maxPolarAngle={Math.PI}
           enableDamping
           dampingFactor={0.06}
         />
