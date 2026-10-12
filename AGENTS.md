@@ -9,4 +9,4 @@
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
 - Imported books (PDF, cover images, look, pose) are stored in browser IndexedDB via src/components/book/library.ts — user chose browser-only storage, no sign-in.
-- Page turning uses a fixed spine pivot for the reversible 180° host sweep; its X-axis bone chain adds only a travelling crease and never translates in Z.
+- The supplied seven-file rig is immutable and drives case, stacks and leaves from one Flip ref; preserve original case meshes and bridge row-major matrices through an imperative renderer to avoid per-frame React work.
