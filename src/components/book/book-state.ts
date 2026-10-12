@@ -1,134 +1,50 @@
-/*
- * Opening / page-turning state for the book.
- *
- * The continuous parts of the animation (how far the covers are open, how far
- * the current leaf has swung) live in a mutable ref that is eased every frame,
- * so React never re-renders per frame. Only the discrete parts — is the book
- * open, which spread is showing, which way a leaf is turning — are React state,
- * because they decide which page textures are needed.
- */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { makeFlip, step as stepFlip, click, goTo } from "./rig/flip";
+import { leavesFor } from "./rig/adapter";
+import type { PdfBookSource } from "./pdf-source";
 
-export type TurnDir = -1 | 1;
-
-export type BookMotion = {
-  /** 0 = closed, 1 = fully open */
-  open: number;
-  openTarget: number;
-  /** progress of the leaf currently turning, 0..1 */
-  turn: number;
-  /** set while the user is dragging a page by hand */
-  dragging: boolean;
-};
-
-export function useBookMotion(spreadCount: number, enabled: boolean) {
-  const motion = useRef<BookMotion>({ open: 0, openTarget: 0, turn: 0, dragging: false });
+export function useBookMotion(source: PdfBookSource | null, enabled: boolean) {
+  const N = source ? leavesFor(source.pageCount) : 0;
+  const flip = useRef(makeFlip(N, -1));
+  const initialized = useRef(false);
+  if (!initialized.current) {
+    // makeFlip clamps its initial s to zero; the supplied reference resets it.
+    flip.current.s = -1;
+    initialized.current = true;
+  }
   const [open, setOpen] = useState(false);
-  const [spread, setSpread] = useState(0);
-  const [turnDir, setTurnDir] = useState<TurnDir | null>(null);
-
-  const lastSpread = Math.max(0, spreadCount - 1);
-
-  // keep the spread in range when a new (shorter) document is imported
+  const openRef = useRef(false);
   useEffect(() => {
-    setSpread((s) => Math.min(s, lastSpread));
-  }, [lastSpread]);
-
-  useEffect(() => {
-    if (enabled) return;
+    const f = flip.current;
+    f.max = N; f.s = -1; f.v = 0; f.target = null; f.drag = null; f.hold = false;
+    openRef.current = false;
     setOpen(false);
-    setTurnDir(null);
-    motion.current.openTarget = 0;
-    motion.current.turn = 0;
-  }, [enabled]);
-
+  }, [enabled, source, N]);
   const toggleOpen = useCallback(() => {
     if (!enabled) return;
-    setOpen((v) => {
-      motion.current.openTarget = v ? 0 : 1;
-      return !v;
-    });
+    const f = flip.current;
+    if (f.s <= -1 + 1e-3) click(f, 1);
+    else goTo(f, -1);
   }, [enabled]);
-
-  /** Start turning one leaf. Ignored while another turn is in flight. */
-  const turn = useCallback(
-    (dir: TurnDir, drag = false) => {
-      if (!enabled || turnDir) return false;
-      if (dir > 0 && spread >= lastSpread) return false;
-      if (dir < 0 && spread <= 0) return false;
-      if (!open) {
-        motion.current.openTarget = 1;
-        setOpen(true);
-      }
-      motion.current.turn = 0;
-      motion.current.dragging = drag;
-      setTurnDir(dir);
-      return true;
-    },
-    [enabled, turnDir, spread, lastSpread, open],
-  );
-
-  /** Called every frame from the scene. */
-  const step = useCallback(
-    (dt: number) => {
-      const m = motion.current;
-      const safeDt = Math.min(dt, 0.05);
-      const k = 1 - Math.exp(-3.2 * safeDt);
-      m.open += (m.openTarget - m.open) * k;
-
-      if (turnDir && !m.dragging) {
-        // Accelerate through the airborne middle and decelerate into the stack.
-        const speed = 1.15 + 0.75 * Math.sin(Math.PI * m.turn);
-        m.turn = Math.min(1, m.turn + safeDt * speed);
-        if (m.turn >= 1) {
-          m.turn = 0;
-          setSpread((s) => Math.min(lastSpread, Math.max(0, s + turnDir)));
-          setTurnDir(null);
-        }
-      }
-    },
-    [turnDir, lastSpread],
-  );
-
-  /** Hand-drag: 0..1 along the sweep of the turning leaf. */
-  const setDrag = useCallback((progress: number) => {
-    motion.current.turn = Math.min(1, Math.max(0, progress));
-  }, []);
-
-  /** Let go of a dragged leaf: it either completes the turn or springs back. */
-  const releaseDrag = useCallback(() => {
-    const m = motion.current;
-    if (!m.dragging) return;
-    m.dragging = false;
-    if (m.turn < 0.45) {
-      m.turn = 0;
-      setTurnDir(null);
-      return;
+  const step = useCallback((dt: number) => {
+    if (enabled) stepFlip(flip.current, Math.min(dt, 1 / 20));
+    const next = flip.current.s > -1 + 1e-3;
+    if (next !== openRef.current) {
+      openRef.current = next;
+      setOpen(next);
     }
-  }, []);
-
-  // keyboard: previous / next page
+  }, [enabled]);
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") turn(1);
-      else if (e.key === "ArrowLeft") turn(-1);
-      else if (e.key === " " || e.key === "Enter") return;
+      if (e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return;
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        click(flip.current, e.key === "ArrowRight" ? 1 : -1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enabled, turn]);
-
-  return {
-    motion,
-    open,
-    spread,
-    turnDir,
-    lastSpread,
-    toggleOpen,
-    turn,
-    step,
-    setDrag,
-    releaseDrag,
-  };
+  }, [enabled]);
+  return { flip, open, toggleOpen, step };
 }
