@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import {
   makeClothNormalMap,
   makeClothRoughnessMap,
@@ -8,11 +8,7 @@ import {
   makeStampMap,
   drawQuill,
 } from "./textures";
-import { RigView, setMatrix } from "./RigView";
-import { toRigCfg, leavesFor } from "./rig/adapter";
-import { rigAt, type RigState } from "./rig/rig";
-import { click, dragStart, dragMove, dragEnd } from "./rig/flip";
-import { sideFor } from "./rig-interaction";
+import { OpenBook } from "./OpenBook";
 import type { useBookMotion } from "./book-state";
 import type { PdfBookSource } from "./pdf-source";
 import { DEFAULT_CONFIG, type BookConfig } from "./config";
@@ -329,9 +325,7 @@ export function Book({
   onEdit,
   editable = false,
   onActivate,
-  onPress,
 }: {
-  onPress?: (pressed: boolean) => void;
   editable?: boolean;
   /** double tap on the case */
   onActivate?: () => void;
@@ -457,135 +451,36 @@ export function Book({
     ];
   }, [pageSideMaterial, pageEdgeMap, edgeTex, c.edgeColor, c.pageEdgeVariation, rounded]);
 
-  /* The outer pose/float remains untouched. Only this wrapper is rig-owned. */
-  const rig = useRef<THREE.Group>(null);
-  const frontHolder = useRef<THREE.Group>(null);
-  const backHolder = useRef<THREE.Group>(null);
-  const spineHolder = useRef<THREE.Group>(null);
+  /* -------------------- opening & page turning -------------------- */
+  const frontCover = useRef<THREE.Group>(null);
+  const recentre = useRef<THREE.Group>(null);
   const closedBlock = useRef<THREE.Group>(null);
-  const pageSet = useMemo(() => new THREE.Group(), []);
-  const view = useRef<RigView | null>(null);
-  const cached = useRef<{ state: RigState; s: number; speed: number; dir: number; cfg: typeof rigCfg; source: PdfBookSource; aspect: number; distance: number; fov: number } | null>(null);
-  const rigCfg = useMemo(() => toRigCfg(c), [c]);
-  const N = useMemo(() => source ? leavesFor(source.pageCount) : 0, [source]);
-  const { controls } = useThree();
-  const press = useRef<{ x: number; side: 1 | -1; started: boolean; moved: boolean; id: number } | null>(null);
-  const pendingClicks = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const openBlock = useRef<THREE.Group>(null);
 
-  useEffect(() => {
-    const edges = (pageMaterials[rounded ? 1 : 0] ?? pageSideMaterial).clone();
-    // Rig outlines have no UVs: preserve the closed block's edge colour/finish.
-    edges.map = null;
-    edges.bumpMap = null;
-    const renderer = new RigView(pageSet, source, c.pageColor, boardMaterial, edges);
-    view.current = renderer;
-    cached.current = null;
-    return () => {
-      renderer.dispose();
-      edges.dispose();
-      if (view.current === renderer) view.current = null;
-    };
-  }, [pageSet, source, c.pageColor, boardMaterial, pageMaterials, pageSideMaterial, rounded]);
+  // pages 1 and N are the covers, so the interior makes this many spreads
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  /* The split block is only mounted while the book is open: an unmounted leaf
+   * cannot swallow the very click that opens the book. */
+  const spreadOpen = !!source && !!reading && reading.open;
 
-  useEffect(() => {
-    const move = (e: PointerEvent) => {
-      const p = press.current;
-      if (!p || e.pointerId !== p.id || !reading) return;
-      const dx = e.clientX - p.x;
-      if (Math.abs(dx) > 7) p.moved = true;
-      const now = performance.now() / 1000;
-      if (!p.started && Math.abs(dx) > 7 && Math.sign(dx) === -p.side) {
-        p.started = true;
-        dragStart(reading.flip.current, p.side, now);
-      }
-      if (p.started) dragMove(reading.flip.current, (-dx * p.side) / (window.innerWidth * 0.32), now);
-    };
-    const release = (e: PointerEvent) => {
-      const p = press.current;
-      if (!p || e.pointerId !== p.id) return;
-      press.current = null;
-      onPress?.(false);
-      if (controls && "enabled" in controls) controls.enabled = true;
-      if (!reading || editable) return;
-      if (p.started) dragEnd(reading.flip.current);
-      else if (!p.moved && e.type !== "pointercancel") {
-        // Defer a click just long enough to distinguish the existing double tap.
-        const timer = setTimeout(() => {
-          pendingClicks.current.delete(timer);
-          click(reading.flip.current, p.side);
-        }, 240);
-        pendingClicks.current.add(timer);
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", release);
-    window.addEventListener("pointercancel", release);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", release);
-      window.removeEventListener("pointercancel", release);
-      pendingClicks.current.forEach(clearTimeout);
-      pendingClicks.current.clear();
-      press.current = null;
-      onPress?.(false);
-    };
-  }, [reading.flip, editable, source, controls, onPress]);
-
-  const grab = (e: ThreeEvent<PointerEvent>) => {
-    if (editable || !source || !reading || press.current) return;
-    let object: THREE.Object3D | null = e.object;
-    let side: 1 | -1 | 0 = 0;
-    const f = reading.flip.current;
-    while (object && object !== rig.current) {
-      side = sideFor(object.name, f.s, N, f.dirHint);
-      if (side) break;
-      object = object.parent;
-    }
-    if (!side) return;
-    e.stopPropagation();
-    press.current = { x: e.nativeEvent.clientX, side, started: false, moved: false, id: e.nativeEvent.pointerId };
-    if (controls && "enabled" in controls) controls.enabled = false;
-    onPress?.(true);
-  };
 
   useFrame((state, dt) => {
-    if (!group.current || !rig.current) return;
+    if (!group.current) return;
     if (autoRotate) group.current.rotation.y += dt * 0.16;
+    // gentle float so the highlights travel across the cloth
     group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6) * 0.035;
+
     reading?.step(dt);
-    const f = reading?.flip.current;
-    const active = !!source && !!f && f.s > -1 + 1e-3;
-    pageSet.visible = active;
-    if (closedBlock.current) closedBlock.current.visible = !active;
-    if (!active || !source || !f) {
-      rig.current.matrix.identity();
-      frontHolder.current?.matrix.identity();
-      backHolder.current?.matrix.identity();
-      spineHolder.current?.matrix.identity();
-      cached.current = null;
-      return;
-    }
-    const speed = Math.round(Math.abs(f.v) * 10000) / 10000;
-    let prev = cached.current;
-    if (!prev || prev.cfg !== rigCfg || prev.source !== source || Math.abs(prev.s - f.s) > 1e-4 || prev.dir !== f.dirHint || Math.abs(prev.speed - speed) > 1e-4) {
-      const next = rigAt(rigCfg, f.s, { leaves: N, flipDir: f.dirHint, flipSpeed: speed });
-      for (const part of next.parts) {
-        const holder = part.name === "frontBoard" ? frontHolder.current : part.name === "backBoard" ? backHolder.current : part.name === "spineBridge" ? spineHolder.current : null;
-        if (holder) setMatrix(holder.matrix, part.local);
-      }
-      view.current?.update(next.parts);
-      prev = { state: next, s: f.s, speed, dir: f.dirHint, cfg: rigCfg, source, aspect: -1, distance: -1, fov: -1 };
-      cached.current = prev;
-    }
-    const aspect = state.size.width / state.size.height;
-    const distance = state.camera.position.length();
-    const fov = state.camera instanceof THREE.PerspectiveCamera ? state.camera.fov : 30;
-    if (prev.aspect !== aspect || Math.abs(prev.distance - distance) > 1e-4 || prev.fov !== fov) {
-      setMatrix(rig.current.matrix, prev.state.frame(aspect, fov, distance, 0).matrix);
-      prev.aspect = aspect;
-      prev.distance = distance;
-      prev.fov = fov;
-    }
+    const open = reading?.motion.current.open ?? 0;
+    // the front board swings about its own joint, on the front face
+    if (frontCover.current) frontCover.current.rotation.y = -Math.PI * open;
+    // ...and the whole book slides back to stay centred as it opens out
+    if (recentre.current) recentre.current.position.x = (m.W / 2) * open;
+    // an open book is twice as wide, so pull it back into frame
+    const s = 1 - 0.44 * open;
+    group.current.scale.setScalar(s);
+    if (closedBlock.current) closedBlock.current.visible = open < 0.02 || !source;
+    if (openBlock.current) openBlock.current.visible = open >= 0.02 && !!source;
   });
 
   const quillProps = {
@@ -602,23 +497,25 @@ export function Book({
   /** Clicking the case opens or closes an imported book. */
   const toggle = (e: { stopPropagation: () => void }) => {
     if (!source) return;
-    if (editable) return;
     e.stopPropagation();
-    pendingClicks.current.forEach(clearTimeout);
-    pendingClicks.current.clear();
     onActivate?.();
   };
 
   return (
     <group ref={group}>
-      <group ref={rig} name="rig" matrixAutoUpdate={false} onPointerDown={grab} onDoubleClick={toggle}>
-        <group ref={frontHolder} name="frontBoard" matrixAutoUpdate={false}>
+      <group ref={recentre}>
+        {/* front board + its artwork and quill, hinged at the joint so the whole
+         * cover swings open together */}
+        <group position={[joint(c).jointX, 0, m.T / 2]}>
+          <group ref={frontCover}>
+            <group position={[-joint(c).jointX, 0, -m.T / 2]}>
               <mesh
                 name="frontBoard"
                 geometry={boardGeo}
                 material={boardMaterial}
                 castShadow
                 receiveShadow
+                onDoubleClick={toggle}
               />
               {/* front cover artwork — stops short of the joint groove */}
               {frontTex && (
@@ -640,9 +537,10 @@ export function Book({
                 <planeGeometry args={[quillSize, quillSize]} />
                 <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} />
               </mesh>}
+            </group>
+          </group>
         </group>
 
-        <group ref={backHolder} name="backBoard" matrixAutoUpdate={false}>
         {/* back board — same plate, flipped, so its joint groove matches the front */}
         <mesh
           name="backBoard"
@@ -651,7 +549,46 @@ export function Book({
           rotation={[Math.PI, 0, 0]}
           castShadow
           receiveShadow
+          onDoubleClick={toggle}
         />
+        {/* spine / edge bridge */}
+        <mesh
+          name="spine"
+          geometry={spineGeo}
+          material={spineMaterial}
+          castShadow
+          receiveShadow
+          onDoubleClick={toggle}
+        />
+
+        {/* text block, inset by the page margins */}
+        <group position={[m.pageCX, m.pageCY, 0]} ref={closedBlock}>
+          <mesh name="closedBlock" geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
+        </group>
+
+        {/* with a PDF imported, the block becomes two bendable halves and the
+         * leaf that is turning, hinged on the spine */}
+        <group position={[m.pageCX - m.pw / 2, m.pageCY, 0]} ref={openBlock} visible={false}>
+          {source && reading && spreadOpen && (
+            <OpenBook
+              width={m.pw}
+              height={m.ph}
+              thickness={m.pt}
+              caseHalf={m.T / 2}
+              board={c.boardThickness}
+              source={source}
+              motion={reading.motion}
+              spread={reading.spread}
+              spreadCount={spreadCount}
+              turnDir={reading.turnDir}
+              paperColor={c.pageColor}
+              onTurn={reading.turn}
+              setDrag={reading.setDrag}
+              releaseDrag={reading.releaseDrag}
+            />
+          )}
+        </group>
+
       {/* back cover artwork */}
       {backTex && (
         <mesh position={[m.panelCX, 0, -m.T / 2 - 0.004]} rotation={[0, Math.PI, 0]}>
@@ -659,6 +596,15 @@ export function Book({
           <meshStandardMaterial map={backTex} {...artProps} />
         </mesh>
       )}
+
+      {/* spine artwork */}
+      {spineTex && (
+        <mesh position={[m.spineSurf, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[m.T * 0.86, m.ph]} />
+          <meshStandardMaterial map={spineTex} {...artProps} />
+        </mesh>
+      )}
+
 
       {/* quill = edit button, back cover, mirrored to its own fore-edge corner */}
       {editable && <mesh
@@ -675,26 +621,6 @@ export function Book({
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>}
 
-      </group>
-      <group ref={spineHolder} name="spineBridge" matrixAutoUpdate={false}>
-        {/* spine / edge bridge */}
-        <mesh
-          name="spine"
-          geometry={spineGeo}
-          material={spineMaterial}
-          castShadow
-          receiveShadow
-        />
-
-      {/* spine artwork */}
-      {spineTex && (
-        <mesh position={[m.spineSurf, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
-          <planeGeometry args={[m.T * 0.86, m.ph]} />
-          <meshStandardMaterial map={spineTex} {...artProps} />
-        </mesh>
-      )}
-
-
       {/* quill = edit button, spine foot */}
       {editable && <mesh
         position={[m.spineSurf - 0.004, -m.H / 2 + quillSize * 1.15, 0]}
@@ -710,14 +636,6 @@ export function Book({
         <meshPhysicalMaterial {...quillProps} alphaMap={maps.quill} opacity={0.9} />
       </mesh>}
       </group>
-      </group>
-        {/* text block, inset by the page margins */}
-        <group position={[m.pageCX, m.pageCY, 0]} ref={closedBlock}>
-          <mesh name="closedBlock" geometry={pageGeo} material={pageMaterials} castShadow receiveShadow />
-        </group>
-
-        <primitive object={pageSet} />
-
     </group>
   );
 }

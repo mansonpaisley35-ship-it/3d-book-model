@@ -425,7 +425,6 @@ function blobUrls(covers: StoredBook["covers"]): BookImages {
 export default function BookScene() {
   const [free, setFree] = useState(false);
   const [overBook, setOverBook] = useState(false);
-  const [pagePressed, setPagePressed] = useState(false);
   const [view, setView] = useState<ViewKey>("cover");
   const [images, setImages] = useState<BookImages>({});
   const [adjusts, setAdjusts] = useState<BookAdjusts>({});
@@ -451,7 +450,9 @@ export default function BookScene() {
   const settle = useRef<(() => void) | null>(null);
   const loadedRef = useRef<string | null>(null);
 
-  const reading = useBookMotion(source, !!source && !configuring);
+  // pages 1 and N are the covers, so the interior makes this many spreads
+  const spreadCount = source ? Math.max(1, Math.floor((source.pageCount - 2) / 2)) : 0;
+  const reading = useBookMotion(spreadCount, !!source && !configuring);
 
   const [aspects, setAspects] = useState<Aspects>(DEFAULT_ASPECTS);
   const [config, setConfig] = useState<BookConfig>(() => suggestConfig(DEFAULT_ASPECTS));
@@ -742,7 +743,6 @@ export default function BookScene() {
                 config={config}
                 editable={configuring}
                 onActivate={activate}
-                onPress={setPagePressed}
                 onEdit={(slot) => configuring && openEditor(slot)}
               />
             </PoseRig>
@@ -814,8 +814,7 @@ export default function BookScene() {
 
         <CameraRig view={configuring ? view : "cover"} active={!free} dist={fit.dist} />
         <OrbitControls
-          makeDefault
-          enabled={!pagePressed && (!configuring || !overBook && orbit)}
+          enabled={!overBook && (!configuring || orbit)}
           enablePan={false}
           minDistance={5}
           maxDistance={22}
